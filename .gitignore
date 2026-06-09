@@ -63,3 +63,10 @@ logs/
 
 # Optional: If you use self-hosted runners or docker targets locally
 .dockerignore
+
+# ####################################################################
+# Autoskills files
+# ####################################################################
+.agents/
+.claude/
+skills-lock.json
