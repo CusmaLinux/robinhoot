@@ -1,7 +1,7 @@
 ---
 name: hexagonal-architecture
 description: Design, implement, and refactor Ports & Adapters systems with clear domain boundaries, dependency inversion, and testable use-case orchestration across TypeScript (NestJS), Java, Kotlin, and Go services.
-origin: Kahoot
+origin: Robinhoot
 ---
 
 # Hexagonal Architecture
