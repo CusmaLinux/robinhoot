@@ -1,0 +1,54 @@
+import * as path from 'path';
+import { Pool } from 'pg';
+import { promises as fs } from 'fs';
+import { Kysely, PostgresDialect } from 'kysely';
+import { Migrator, FileMigrationProvider } from 'kysely/migration';
+import { Database } from './database.types';
+import 'dotenv/config';
+
+async function migrateToLatest() {
+  const db = new Kysely<Database>({
+    dialect: new PostgresDialect({
+      pool: new Pool({
+        host: process.env.DB_HOST || 'localhost',
+        database: process.env.DB_NAME || 'robinhoot',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || 'password',
+        port: parseInt(process.env.DB_PORT || '5432', 10),
+      }),
+    }),
+  });
+
+  const migrator = new Migrator({
+    db,
+    provider: new FileMigrationProvider({
+      fs,
+      path,
+      // Points to the centralized migrations folder
+      migrationFolder: path.join(__dirname, 'migrations'),
+    }),
+  });
+
+  const { error, results } = await migrator.migrateToLatest();
+
+  results?.forEach((it) => {
+    if (it.status === 'Success') {
+      console.log(`Migration "${it.migrationName}" was executed successfully`);
+    } else if (it.status === 'Error') {
+      console.error(`Failed to execute migration "${it.migrationName}"`);
+    }
+  });
+
+  if (error) {
+    console.error('Failed to migrate');
+    console.error(error);
+    process.exit(1);
+  }
+
+  await db.destroy();
+}
+
+migrateToLatest().catch((error) => {
+  console.error('Unexpected error during migration', error);
+  process.exit(1);
+});
