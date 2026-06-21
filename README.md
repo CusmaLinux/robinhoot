@@ -1,29 +1,7 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+## Robinhoot
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Create educational exercises and practice with your students—all in real time. Have fun!
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
 ## Project setup
 
@@ -68,31 +46,77 @@ $ pnpm install -g @nestjs/mau
 $ mau deploy
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+ ## Database Migrations (Kysely)
+ 
+ This project uses [Kysely](https://kysely.dev/) as a type-safe SQL query builder, with a centralized migration system located in `src/database/migrations`. Migrations are executed directly in TypeScript using `tsx`.
+ 
+ ### Prerequisites
+ Before running migrations, ensure your PostgreSQL database is running and your `.env` file is configured at the root of the project:
+ 
+ ```env
+ DB_HOST=localhost
+ DB_PORT=5432
+ DB_USER=postgres
+ DB_PASSWORD=password
+ DB_NAME=robinhoot
+ ```
+ 
+ ### Available Commands
+ 
+ We use `pnpm` to manage migration scripts.
+ 
+ | Command | Description |
+ | --- | --- |
+ | `pnpm db:migration:make <name>` | Generates a new timestamped migration file in the `migrations` folder. |
+ | `pnpm db:migrate` | Applies all pending migrations to the database. |
+ | `pnpm db:migrate:down` | Reverts the most recently applied migration (one step back). |
+ 
+ ---
+ 
+ ### Standard Workflow
+ 
+ **1. Create a new migration**
+ Whenever you need to alter the database schema, generate a new file with a descriptive name:
+ 
+ ```bash
+ pnpm db:migration:make create_users_table
+ ```
+ 
+ *This creates a file like: `src/database/migrations/20260619153000-create_users_table.ts`*
+ 
+ **2. Write the schema changes**
+ Open the generated file and write your `up` and `down` logic using Kysely's schema builder:
+ 
+ ```typescript
+ import { Kysely, sql } from 'kysely';
+ 
+ export async function up(db: Kysely<any>): Promise<void> {
+   await db.schema
+     .createTable('users')
+     .addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`gen_random_uuid()`))
+     // ... add columns
+     .execute();
+ }
+ 
+ export async function down(db: Kysely<any>): Promise<void> {
+   await db.schema.dropTable('users').execute();
+ }
+ ```
+ 
+ **3. Apply the migration**
+ Push your changes to the database:
+ 
+ ```bash
+ pnpm db:migrate
+ ```
+ 
+ **4. (Optional) Rollback**
+ If you made a mistake locally, you can instantly revert the last applied migration:
+ 
+ ```bash
+ pnpm db:migrate:down
+ ```
+ 
+ ### Architecture Note
+ 
+ While the application follows Hexagonal Architecture and Vertical Slices, the database schema and migrations are treated as centralized, cross-cutting infrastructure. Feature modules (like `users` or `products`) interact with Kysely via their Outbound Adapters (e.g., `user.kysely.adapter.ts`).
