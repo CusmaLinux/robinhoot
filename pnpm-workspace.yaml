@@ -1,4 +1,5 @@
 allowBuilds:
   '@nestjs/core': false
+  bcrypt: true
   esbuild: false
   unrs-resolver: false
