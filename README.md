@@ -22,6 +22,15 @@ $ pnpm run start:dev
 $ pnpm run start:prod
 ```
 
+## API Documentation (Swagger)
+
+Once the server is running, interactive Swagger docs are available at:
+
+- **Swagger UI:** [http://localhost:3000/api](http://localhost:3000/api)
+- **JSON spec:** [http://localhost:3000/api-json](http://localhost:3000/api-json)
+
+The Swagger UI provides a visual interface to browse endpoints, inspect request/response schemas, and make live API calls.
+
 ## Run tests
 
 ```bash
