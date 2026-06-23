@@ -1,8 +1,14 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
 
-export interface CurrentUserData {
+export class CurrentUserData {
+  @ApiProperty()
   userId: string;
+
+  @ApiProperty()
   email: string;
+
+  @ApiProperty()
   roles: string[];
 }
 

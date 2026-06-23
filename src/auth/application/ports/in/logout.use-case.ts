@@ -1,4 +1,7 @@
-export interface LogoutInput {
+import { ApiProperty } from '@nestjs/swagger';
+
+export class LogoutInput {
+  @ApiProperty()
   userId: string;
 }
 
