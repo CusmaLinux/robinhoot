@@ -2,6 +2,7 @@ import { Module, Global } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './adapters/in/auth.controller';
 import { JwtAuthGuard } from './adapters/in/jwt-auth.guard';
+import { RolesGuard } from './adapters/in/roles.guard';
 import { JwtNestJsAdapter } from './adapters/out/jwt-nestjs.adapter';
 import { BcryptAdapter } from './adapters/out/bcrypt.adapter';
 import { UserKyselyAdapter } from './adapters/out/user.kysely.adapter';
@@ -53,10 +54,14 @@ import { USER_REPOSITORY_PORT } from '../application/ports/out/user.repository.p
       provide: USER_REPOSITORY_PORT,
       useClass: UserKyselyAdapter,
     },
-    // Global guard
+    // Global guards
     {
       provide: 'APP_GUARD',
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: 'APP_GUARD',
+      useClass: RolesGuard,
     },
   ],
   exports: [

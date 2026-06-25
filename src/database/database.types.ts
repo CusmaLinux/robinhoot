@@ -6,7 +6,10 @@ export interface UsersTable {
   password_hash: string;
   token_version: number;
   created_at: ColumnType<Date, string | undefined, never>;
+  roles: UserRole[];
 }
+
+type UserRole = 'user' | 'admin';
 
 export interface Database {
   users: UsersTable;
