@@ -1,20 +1,24 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Tech stack: TypeScript, NestJS 11, Node.js, PostgreSQL (Kysely query builder), JWT + Passport, Swagger, Jest, bcrypt
+  Package manager: pnpm (never npm/yarn)
+  API style: RESTful, documented via Swagger at /api
+  Testing: Jest with ts-jest, unit tests (*.spec.ts) co-located, e2e tests (*.e2e-spec.ts) in test/
+  Architecture: Hexagonal (Ports & Adapters) - see .agents/skills/hexagonal-architecture/
+  TDD approach: Vertical tracer bullets - one test → one implementation → repeat (see .agents/skills/tdd/)
+  Domain: Educational platform for real-time exercises ("Robinhoot")
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  apply:
+    - 'Follow Test-Driven Development (TDD): write one test for one behavior, then minimal implementation. No horizontal slicing.'
+    - 'Adhere to Hexagonal Architecture principles: domain has no external dependencies, ports are interfaces in application/, adapters are in infrastructure/. Dependency direction always inward.'
+    - 'Use DI tokens (Symbols) for port implementations, never inject concrete infrastructure classes into application services.'
+    - 'Keep validation at boundaries: NestJS pipes/DTOs in inbound adapters + use-case invariants in application services.'
+  proposal:
+    - Include rollback plan
+    - Identify affected teams
+    - Reference existing patterns before inventing new ones
+  specs:
+    - Use Given/When/Then format for behavioral specs
+    - Focus on public interface behavior, not implementation details

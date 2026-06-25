@@ -3,12 +3,35 @@ import { Kysely, sql } from 'kysely';
 import { Database } from '../../../../database/database.types';
 import { UserRepositoryPort } from '../../../application/ports/out/user.repository.port';
 import { UserEntity } from '../../../domain/entities/user.entity';
+import type { UserRole } from '../../../domain/value-objects/user-role';
 
 @Injectable()
 export class UserKyselyAdapter implements UserRepositoryPort {
   constructor(
     @Inject('KYSELY_INSTANCE') private readonly db: Kysely<Database>,
   ) {}
+
+  private parseRoles(rolesValue: unknown): UserRole[] {
+    if (Array.isArray(rolesValue)) {
+      return rolesValue as UserRole[];
+    }
+    if (typeof rolesValue === 'string') {
+      return JSON.parse(rolesValue) as UserRole[];
+    }
+    return ['user'];
+  }
+
+  private buildUserEntity(row: Record<string, unknown>): UserEntity {
+    const roles = this.parseRoles(row.roles);
+    return new UserEntity(
+      row.id as string,
+      row.email as string,
+      row.password_hash as string,
+      row.token_version as number,
+      row.created_at as Date,
+      roles,
+    );
+  }
 
   async findByEmail(email: string): Promise<UserEntity | null> {
     const row = await this.db
@@ -19,13 +42,7 @@ export class UserKyselyAdapter implements UserRepositoryPort {
 
     if (!row) return null;
 
-    return new UserEntity(
-      row.id,
-      row.email,
-      row.password_hash,
-      row.token_version,
-      row.created_at,
-    );
+    return this.buildUserEntity(row);
   }
 
   async findById(id: string): Promise<UserEntity | null> {
@@ -37,13 +54,7 @@ export class UserKyselyAdapter implements UserRepositoryPort {
 
     if (!row) return null;
 
-    return new UserEntity(
-      row.id,
-      row.email,
-      row.password_hash,
-      row.token_version,
-      row.created_at,
-    );
+    return this.buildUserEntity(row);
   }
 
   async create(email: string, passwordHash: string): Promise<UserEntity> {
@@ -54,17 +65,12 @@ export class UserKyselyAdapter implements UserRepositoryPort {
         password_hash: passwordHash,
         token_version: 1,
         created_at: new Date().toISOString(),
+        roles: sql`${JSON.stringify(['user'])}::jsonb`,
       })
       .returningAll()
       .execute();
 
-    return new UserEntity(
-      row.id,
-      row.email,
-      row.password_hash,
-      row.token_version,
-      row.created_at,
-    );
+    return this.buildUserEntity(row);
   }
 
   async bumpTokenVersion(userId: string): Promise<void> {

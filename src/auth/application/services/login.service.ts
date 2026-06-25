@@ -38,7 +38,7 @@ export class LoginService implements LoginUseCasePort {
     const accessToken = this.jwtService.sign({
       sub: user.id,
       email: user.email,
-      roles: [],
+      roles: user.roles,
       tokenVersion: user.tokenVersion,
     });
 

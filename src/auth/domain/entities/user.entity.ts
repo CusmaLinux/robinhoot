@@ -1,3 +1,5 @@
+import type { UserRole } from '../value-objects/user-role';
+
 export class UserEntity {
   constructor(
     public readonly id: string,
@@ -5,5 +7,6 @@ export class UserEntity {
     public readonly passwordHash: string,
     public readonly tokenVersion: number,
     public readonly createdAt: Date,
+    public readonly roles: UserRole[],
   ) {}
 }
