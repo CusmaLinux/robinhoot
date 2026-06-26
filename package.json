@@ -18,6 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:integration": "jest --config ./test/jest-integration.json",
+    "test:all": "jest --coverage && jest --config ./test/jest-integration.json",
     "db:migrate": "tsx src/database/migrator.ts",
     "db:migrate:down": "tsx src/database/migrator-down.ts",
     "db:migration:make": "tsx src/database/make-migration.ts"
