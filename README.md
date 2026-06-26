@@ -2,7 +2,6 @@
 
 Create educational exercises and practice with your students—all in real time. Have fun!
 
-
 ## Project setup
 
 ```bash
@@ -42,6 +41,12 @@ $ pnpm run test:e2e
 
 # test coverage
 $ pnpm run test:cov
+
+# test integration
+$ pnpm run test:integration
+
+# test all
+$ pnpm run test:all
 ```
 
 ## Deployment
@@ -129,3 +134,43 @@ $ mau deploy
  ### Architecture Note
  
  While the application follows Hexagonal Architecture and Vertical Slices, the database schema and migrations are treated as centralized, cross-cutting infrastructure. Feature modules (like `users` or `products`) interact with Kysely via their Outbound Adapters (e.g., `user.kysely.adapter.ts`).
+
+## OpenCode
+
+This project uses [OpenCode](https://opencode.ai/docs) — an AI-native coding assistant. Below are the project-specific configurations and tooling.
+
+### OpenSpec
+
+[OpenSpec](https://github.com/Fission-AI/OpenSpec/blob/main/docs/getting-started.md) is a spec-driven development workflow integrated into this project. Changes are planned and tracked as structured artifacts (proposals, designs, specs, tasks) under `openspec/`. Use the commands below to interact with the OpenSpec lifecycle.
+
+### Skills
+
+Skills encapsulate reusable expertise for the AI assistant. This project defines skills under two locations:
+
+**Domain skills** (`.agents/skills/`):
+- **caveman** — Ultra-compressed communication mode
+- **diagnose** — Disciplined diagnosis loop for hard bugs and regressions
+- **hexagonal-architecture** — Ports & Adapters design patterns
+- **improve-codebase-architecture** — Refactoring and consolidation opportunities
+- **nestjs-best-practices** — NestJS best practices for production apps
+- **nodejs-backend-patterns** — Backend service patterns (Express/Fastify)
+- **nodejs-best-practices** — Node.js development principles
+- **tdd** — Test-driven development (red-green-refactor)
+- **to-issues** — Break plans into traceable issues
+- **to-prd** — Generate PRDs from conversation context
+- **typescript-advanced-types** — Advanced TypeScript type system patterns
+
+**OpenSpec workflow skills** (`.opencode/skills/`):
+- **openspec-propose** — Create a new change with proposal, design, and tasks
+- **openspec-apply-change** — Implement tasks from an OpenSpec change
+- **openspec-archive-change** — Archive a completed change
+- **openspec-explore** — Explore ideas and clarify requirements
+- **openspec-sync-specs** — Sync delta specs back to main specs
+
+### Custom Commands
+
+Custom slash-commands available in OpenCode:
+
+| Command | Description |
+|---------|-------------|
+| `/test` | Run unit, integration, e2e tests + coverage and suggest improvements |
