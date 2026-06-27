@@ -52,13 +52,13 @@ describe('RegisterService', () => {
         id: 'user-456',
         email: 'new@example.com',
       });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockUserRepository.findByEmail).toHaveBeenCalledWith(
         'new@example.com',
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockBcryptService.hash).toHaveBeenCalledWith('password123');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockUserRepository.create).toHaveBeenCalledWith(
         'new@example.com',
         'hashed-password',
