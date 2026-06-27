@@ -1,8 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty } from 'class-validator';
 
 export class LogoutInput {
   @ApiProperty()
-  userId: string;
+  @IsString()
+  @IsNotEmpty()
+  userId!: string;
 }
 
 export interface LogoutOutput {
