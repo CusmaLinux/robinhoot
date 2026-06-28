@@ -3,13 +3,13 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class CurrentUserData {
   @ApiProperty()
-  userId: string;
+  userId!: string;
 
   @ApiProperty()
-  email: string;
+  email!: string;
 
   @ApiProperty()
-  roles: string[];
+  roles!: string[];
 }
 
 export const CurrentUser = createParamDecorator(
