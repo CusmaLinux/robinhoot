@@ -16,7 +16,11 @@ export class UserKyselyAdapter implements UserRepositoryPort {
       return rolesValue as UserRole[];
     }
     if (typeof rolesValue === 'string') {
-      return JSON.parse(rolesValue) as UserRole[];
+      try {
+        return JSON.parse(rolesValue) as UserRole[];
+      } catch {
+        return ['user'];
+      }
     }
     return ['user'];
   }
