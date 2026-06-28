@@ -23,7 +23,7 @@ describe('LogoutService', () => {
       const result = await logoutService.execute({ userId: 'user-123' });
 
       expect(result).toEqual({ success: true });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockUserRepository.bumpTokenVersion).toHaveBeenCalledWith(
         'user-123',
       );

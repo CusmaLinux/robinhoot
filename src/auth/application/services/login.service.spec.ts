@@ -58,16 +58,16 @@ describe('LoginService', () => {
       });
 
       expect(result).toEqual({ accessToken: 'jwt-token' });
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockUserRepository.findByEmail).toHaveBeenCalledWith(
         'test@example.com',
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockBcryptService.compare).toHaveBeenCalledWith(
         'password123',
         'hashed-password',
       );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockJwtService.sign).toHaveBeenCalledWith({
         sub: 'user-123',
         email: 'test@example.com',

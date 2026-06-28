@@ -13,5 +13,21 @@ describe('EmailVO', () => {
 
       expect(email.value).toBe('user@domain.com');
     });
+
+    it('should throw for invalid email format', () => {
+      expect(() => EmailVO.create('invalid-email')).toThrow(
+        'Invalid email format',
+      );
+    });
+
+    it('should throw for email without @', () => {
+      expect(() => EmailVO.create('userdomain.com')).toThrow(
+        'Invalid email format',
+      );
+    });
+
+    it('should throw for empty email', () => {
+      expect(() => EmailVO.create('')).toThrow('Invalid email format');
+    });
   });
 });

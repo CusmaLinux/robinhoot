@@ -1,18 +1,37 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ExecutionContext } from '@nestjs/common';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { IS_PUBLIC_KEY } from './public.decorator';
 import type { ValidateTokenUseCasePort } from '../../../application/ports/in/validate-token.use-case';
 
 describe('JwtAuthGuard', () => {
   let guard: JwtAuthGuard;
   let mockValidateTokenService: jest.Mocked<ValidateTokenUseCasePort>;
+  let mockReflector: { getAllAndOverride: jest.Mock; get: jest.Mock };
+
+  const publicPaths = ['/auth/login', '/auth/register'];
 
   beforeEach(() => {
     mockValidateTokenService = {
       execute: jest.fn(),
     };
+    mockReflector = {
+      getAllAndOverride: jest.fn().mockImplementation((key, targets) => {
+        if (key !== IS_PUBLIC_KEY) return undefined;
+        for (const target of targets) {
+          if (target && typeof target === 'object') {
+            const handler = target as { path?: string };
+            if (handler.path && publicPaths.includes(handler.path)) {
+              return true;
+            }
+          }
+        }
+        return undefined;
+      }),
+      get: jest.fn(),
+    };
 
-    guard = new JwtAuthGuard(mockValidateTokenService);
+    guard = new JwtAuthGuard(mockValidateTokenService, mockReflector as any);
   });
 
   function createMockRequest(path: string, authHeader?: string): Request {
@@ -32,6 +51,8 @@ describe('JwtAuthGuard', () => {
       switchToHttp: () => ({
         getRequest: () => createMockRequest(path, authHeader),
       }),
+      getHandler: () => ({ path }),
+      getClass: () => ({}),
     } as unknown as ExecutionContext;
   }
 
@@ -42,7 +63,6 @@ describe('JwtAuthGuard', () => {
       const result = await guard.canActivate(context);
 
       expect(result).toBe(true);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockValidateTokenService.execute).not.toHaveBeenCalled();
     });
 
@@ -52,7 +72,6 @@ describe('JwtAuthGuard', () => {
       const result = await guard.canActivate(context);
 
       expect(result).toBe(true);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockValidateTokenService.execute).not.toHaveBeenCalled();
     });
 
@@ -84,6 +103,8 @@ describe('JwtAuthGuard', () => {
         switchToHttp: () => ({
           getRequest: () => mockRequest,
         }),
+        getHandler: () => ({ path: '/protected-endpoint' }),
+        getClass: () => ({}),
       } as unknown as ExecutionContext;
 
       mockValidateTokenService.execute.mockResolvedValue({
@@ -95,7 +116,6 @@ describe('JwtAuthGuard', () => {
       const result = await guard.canActivate(context);
 
       expect(result).toBe(true);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockValidateTokenService.execute).toHaveBeenCalledWith(
         'valid-token',
       );

@@ -1,11 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsString, MinLength, MaxLength } from 'class-validator';
 
 export class RegisterInput {
   @ApiProperty()
-  email: string;
+  @IsEmail()
+  email!: string;
 
   @ApiProperty()
-  password: string;
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password!: string;
 }
 
 export interface RegisterOutput {

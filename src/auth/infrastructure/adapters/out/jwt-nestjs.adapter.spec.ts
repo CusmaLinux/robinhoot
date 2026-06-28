@@ -9,7 +9,7 @@ describe('JwtNestJsAdapter', () => {
     mockJwtService = {
       sign: jest.fn(),
       verify: jest.fn(),
-    } as unknown as jest.Mocked<JwtService>;
+    };
 
     adapter = new JwtNestJsAdapter(mockJwtService);
   });
@@ -24,7 +24,7 @@ describe('JwtNestJsAdapter', () => {
       });
 
       expect(result).toBe('signed-token');
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockJwtService.sign).toHaveBeenCalledWith({
         sub: 'user-123',
         email: 'test@example.com',
@@ -45,7 +45,7 @@ describe('JwtNestJsAdapter', () => {
       const result = adapter.verify('some-token');
 
       expect(result).toEqual(payload);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(mockJwtService.verify).toHaveBeenCalledWith('some-token');
     });
   });
