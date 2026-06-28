@@ -7,13 +7,17 @@ import { Database } from './database.types';
 import 'dotenv/config';
 
 async function migrateDown() {
+  if (!process.env.DB_PASSWORD) {
+    throw new Error('DB_PASSWORD environment variable is not set');
+  }
+
   const db = new Kysely<Database>({
     dialect: new PostgresDialect({
       pool: new Pool({
         host: process.env.DB_HOST || 'localhost',
         database: process.env.DB_NAME || 'robinhoot',
         user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || 'password',
+        password: process.env.DB_PASSWORD,
         port: parseInt(process.env.DB_PORT || '5432', 10),
       }),
     }),
