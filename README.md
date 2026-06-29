@@ -167,6 +167,25 @@ Skills encapsulate reusable expertise for the AI assistant. This project defines
 - **openspec-explore** — Explore ideas and clarify requirements
 - **openspec-sync-specs** — Sync delta specs back to main specs
 
+### Sub-Agents
+
+Specialized sub-agents are available for focused tasks. They are defined in `.opencode/agents/`:
+
+| Agent | Description |
+|-------|-------------|
+| `docs-writer` | Writes and maintains project documentation |
+| `review` | Reviews code for quality and best practices |
+| `security-auditor` | Performs security audits and identifies vulnerabilities |
+
+### GitHub Actions
+
+Two GitHub Actions workflows integrate OpenCode into CI/CD:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `opencode.yml` | Issue / PR review comments containing `/oc` or `/opencode` | Run OpenCode on demand via comments |
+| `opencode-review.yml` | PR opened, synchronized, reopened, ready for review | Automated code review on every PR |
+
 ### Custom Commands
 
 Custom slash-commands available in OpenCode:
