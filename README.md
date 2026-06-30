@@ -169,13 +169,13 @@ Skills encapsulate reusable expertise for the AI assistant. This project defines
 
 ### Sub-Agents
 
-Specialized sub-agents are available for focused tasks. They are defined in `.opencode/agents/`:
+Specialized sub-agents are available for focused tasks. They are defined in [`.opencode/agents/`](.opencode/agents/):
 
 | Agent | Description |
 |-------|-------------|
-| `docs-writer` | Writes and maintains project documentation |
-| `review` | Reviews code for quality and best practices |
-| `security-auditor` | Performs security audits and identifies vulnerabilities |
+| [`docs-writer`](.opencode/agents/docs-writer.md) | Writes and maintains project documentation |
+| [`review`](.opencode/agents/review.md) | Reviews code for quality and best practices |
+| [`security-auditor`](.opencode/agents/security-auditor.md) | Performs security audits and identifies vulnerabilities |
 
 ### GitHub Actions
 
@@ -183,8 +183,8 @@ Two GitHub Actions workflows integrate OpenCode into CI/CD:
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `opencode.yml` | Issue / PR review comments containing `/oc` or `/opencode` | Run OpenCode on demand via comments |
-| `opencode-review.yml` | PR opened, synchronized, reopened, ready for review | Automated code review on every PR |
+| [`opencode.yml`](.github/workflows/opencode.yml) | Issue / PR review comments containing `/oc` or `/opencode` | Run OpenCode on demand via comments |
+| [`opencode-review.yml`](.github/workflows/opencode-review.yml) | PR opened, synchronized, reopened, ready for review | Automated code review on every PR |
 
 ### Custom Commands
 
