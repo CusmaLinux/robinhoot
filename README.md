@@ -193,3 +193,17 @@ Custom slash-commands available in OpenCode:
 | Command | Description |
 |---------|-------------|
 | `/test` | Run unit, integration, e2e tests + coverage and suggest improvements |
+
+### CodeGraph
+
+[CodeGraph](https://colbymchenry.github.io/codegraph/) is a code intelligence tool that builds a pre-indexed SQLite knowledge graph of every symbol, call edge, and file in the workspace, auto-syncing on file changes. It lets the AI answer questions about architecture, call flows, and symbol locations in a single round-trip instead of a `grep`/`read` loop.
+
+When you run `codegraph init`, a `.codegraph/` directory is created at the project root with the live index. The AI assistant is configured to reach for CodeGraph before grep or file reads (see the [CodeGraph section](AGENTS.md#CodeGraph) in `AGENTS.md`).
+
+To install and set up CodeGraph in your own project:
+
+1. Install the CLI: `npx @colbymchenry/codegraph` (or `codegraph install`)
+2. Index your project: `codegraph init`
+3. CodeGraph auto-wires into OpenCode via MCP.
+
+See the [CodeGraph documentation](https://colbymchenry.github.io/codegraph/getting-started/introduction/) for installation, configuration, and advanced usage.
