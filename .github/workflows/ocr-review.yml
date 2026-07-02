@@ -122,13 +122,36 @@ jobs:
           ocr config set llm.auth_token ${{ secrets.OPENCODE_API_KEY}}
           ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
 
-      - name: Debug – capture OCR request
+      - name: Debug – capture full request to httpbin
+        env:
+          NODE_DEBUG: axios # prints HTTP request/response details
         run: |
           # Temporarily override the URL for debugging
           ocr config set llm.url "https://httpbin.org/anything"
-          # Run OCR review and capture output
-          ocr review || true   # allow failure to see output
-        continue-on-error: true
+
+          # Run review with explicit base and head (use the PR head SHA)
+          ocr review --base origin/main --head ${{ github.event.pull_request.head.sha }}
+
+      - name: Test Zen API with potential OCR parameters
+        run: |
+          echo "=== Test 1: with response_format ==="
+          curl -s -w "\nHTTP Status: %{http_code}\n" https://opencode.ai/zen/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.OPENCODE_API_KEY }}" \
+            -d '{
+              "model": "big-pickle",
+              "messages": [{"role": "system", "content": "You are a code reviewer."}, {"role": "user", "content": "Hello"}],
+              "response_format": {"type": "json_object"}
+            }'
+
+          echo -e "\n=== Test 2: without response_format ==="
+          curl -s -w "\nHTTP Status: %{http_code}\n" https://opencode.ai/zen/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.OPENCODE_API_KEY }}" \
+            -d '{
+              "model": "big-pickle",
+              "messages": [{"role": "system", "content": "You are a code reviewer."}, {"role": "user", "content": "Hello"}]
+            }'
 
       - name: Run OpenCodeReview
         id: review
