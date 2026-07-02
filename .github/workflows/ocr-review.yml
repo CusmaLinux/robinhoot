@@ -123,19 +123,12 @@ jobs:
           ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
           ocr config set llm.extra_body '{"response_format": null}'
 
-      - name: Debug – capture OCR request to httpbin
-        env:
-          NODE_DEBUG: axios # optional, prints more detail
-        run: |
-          # Temporarily override URL to httpbin
-          ocr config set llm.url "https://httpbin.org/anything"
-          # Run review with explicit diff range (use --from and --to)
-          # This forces OCR to detect changed files and call the LLM.
-          ocr review --from origin/main --to ${{ github.event.pull_request.head.sha }}
-
       - name: Run OCR review with background instruction
         run: |
-          ocr review --background "Please output valid JSON responses."
+          ocr review --background "json"
+
+      - name: Show all OCR config
+        run: ocr config list
 
       - name: Run OpenCodeReview
         id: review
