@@ -23,7 +23,7 @@ import { USER_REPOSITORY_PORT } from '../application/ports/out/user.repository.p
   imports: [
     JwtModule.register({
       secret: process.env.JWT_SECRET,
-      signOptions: { expiresIn: '15m' },
+      //signOptions: { expiresIn: '15m' },
     }),
   ],
   controllers: [AuthController],

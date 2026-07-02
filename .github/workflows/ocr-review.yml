@@ -121,7 +121,7 @@ jobs:
           ocr config set llm.url ${{ secrets.OCR_LLM_URL }}
           ocr config set llm.auth_token ${{ secrets.OPENCODE_API_KEY}}
           ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
-          ocr config set llm.extra_body '{"response_format": null}'
+          ocr config set language English
 
       - name: Run OCR review with background instruction
         run: |
