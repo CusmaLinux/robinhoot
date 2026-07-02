@@ -120,7 +120,7 @@ jobs:
         run: |
           ocr config set llm.url ${{ secrets.OCR_LLM_URL }}
           ocr config set llm.auth_token ${{ secrets.OPENCODE_API_KEY}}
-          ocr config set llm.model opencode/big-pickle
+          ocr config set llm.model big-pickle
           ocr config set llm.extra_body '{"thinking": {"type": "disabled"}}'
 
       - name: Run OpenCodeReview
