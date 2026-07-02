@@ -123,13 +123,6 @@ jobs:
           ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
           ocr config set language English
 
-      - name: Run OCR review with background instruction
-        run: |
-          ocr review --background "json"
-
-      - name: Show all OCR config
-        run: ocr config list
-
       - name: Run OpenCodeReview
         id: review
         run: |
