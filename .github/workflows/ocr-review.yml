@@ -122,16 +122,6 @@ jobs:
           ocr config set llm.auth_token ${{ secrets.OPENCODE_API_KEY}}
           ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
 
-      - name: Debug – capture full request to httpbin
-        env:
-          NODE_DEBUG: axios # prints HTTP request/response details
-        run: |
-          # Temporarily override the URL for debugging
-          ocr config set llm.url "https://httpbin.org/anything"
-
-          # Run review with explicit base and head (use the PR head SHA)
-          ocr review --base origin/main --head ${{ github.event.pull_request.head.sha }}
-
       - name: Test Zen API with potential OCR parameters
         run: |
           echo "=== Test 1: with response_format ==="
