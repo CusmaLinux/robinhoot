@@ -4,7 +4,7 @@
 # and posts review comments directly on the PR.
 #
 # Triggers:
-#   - PR opened (uses pull_request_target for fork secret access)
+#   - PR opened (uses pull_request for fork secret access)
 #   - Comment on PR containing '/open-code-review' or '@open-code-review'
 #
 # Required secrets:
@@ -57,10 +57,10 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  # Use pull_request_target instead of pull_request so that secrets are
+  # Use pull_request instead of pull_request so that secrets are
   # available even for PRs from forks. This is safe because OCR only reads
   # the diff and does not execute any code from the PR.
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
   issue_comment:
@@ -75,13 +75,13 @@ jobs:
     runs-on: ubuntu-latest
     # Run on PR events, or on comments starting with trigger keywords
     if: |
-      github.event_name == 'pull_request_target' ||
+      github.event_name == 'pull_request' ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/open-code-review')) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '@open-code-review'))
     steps:
       - name: Get PR context
         id: pr-context
-        if: github.event_name != 'pull_request_target'
+        if: github.event_name != 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
@@ -150,7 +150,7 @@ jobs:
           # Get base ref and head SHA from PR context (different for comment triggers)
           # Note: We use HEAD_SHA instead of origin/${HEAD_REF} to support fork PRs,
           # because fork branches don't exist on the origin remote.
-          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE_REF="${{ github.event.pull_request.base.ref }}"
             HEAD_SHA="${{ github.event.pull_request.head.sha }}"
           else
@@ -234,7 +234,7 @@ jobs:
             let commitSha;
 
             // Get commit SHA from event context
-            if (context.eventName === 'pull_request_target') {
+            if (context.eventName === 'pull_request') {
               commitSha = context.payload.pull_request.head.sha;
             } else {
               // For comment events, we need to fetch the PR
