@@ -122,6 +122,14 @@ jobs:
           ocr config set llm.auth_token ${{ secrets.OPENCODE_API_KEY}}
           ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
 
+      - name: Debug – capture OCR request
+        run: |
+          # Temporarily override the URL for debugging
+          ocr config set llm.url "https://httpbin.org/anything"
+          # Run OCR review and capture output
+          ocr review || true   # allow failure to see output
+        continue-on-error: true
+
       - name: Run OpenCodeReview
         id: review
         run: |
