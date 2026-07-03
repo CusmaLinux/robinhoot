@@ -57,11 +57,11 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  # Use pull_request instead of pull_request so that secrets are
+  # Use pull_request_target instead of pull_request so that secrets are
   # available even for PRs from forks. This is safe because OCR only reads
   # the diff and does not execute any code from the PR.
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, ready_for_review]
 
   issue_comment:
     types: [created]
@@ -73,6 +73,7 @@ permissions:
 jobs:
   code-review:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Run on PR events, or on comments starting with trigger keywords
     if: |
       github.event_name == 'pull_request' ||
@@ -109,6 +110,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: '**/package.lock.json'
 
       - name: Install OpenCodeReview
         run: |
@@ -117,15 +120,17 @@ jobs:
           ocr version || true
 
       - name: Configure OCR
+        env:
+          OCR_LLM_URL: ${{ secrets.OCR_LLM_URL }}
+          OCR_LLM_AUTH_TOKEN: ${{ secrets.OPENCODE_API_KEY}}
+          OCR_LLM_MODEL: ${{ secrets.OCR_LLM_MODEL }}
         run: |
-          ocr config set llm.url ${{ secrets.OCR_LLM_URL }}
-          ocr config set llm.auth_token ${{ secrets.OPENCODE_API_KEY}}
-          ocr config set llm.model ${{ secrets.OCR_LLM_MODEL }}
+          ocr config set llm.url "$OCR_LLM_URL"
+          ocr config set llm.auth_token "$OCR_LLM_AUTH_TOKEN"
+          ocr config set llm.model "$OCR_LLM_MODEL"
           ocr config set llm.use_anthropic false
           ocr config set language English
 
-      - name: ocr config
-        run: cat ~/.opencodereview/config.json
       - name: Run OpenCodeReview
         id: review
         run: |
