@@ -1,0 +1,279 @@
+name: CI
+
+# Triggers
+#   push to main          -> full pipeline (acts as the safety net before merge)
+#   pull_request to main  -> full pipeline (blocks merging on failure)
+#   workflow_dispatch     -> manual rerun from the Actions UI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same branch / PR so a force-push
+# or new commit doesn't burn extra CI minutes. Keeps total runtime
+# under the 5-min Definition of Done even on noisy branches.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Workflow-wide defaults. Per-job env overrides are intentionally
+# minimal so that every job sees the same DB + JWT configuration.
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '11.8.0'
+
+  # Strong, deterministic JWT secret used by integration / e2e jobs.
+  # Passes the diversity check in src/main.ts (>= 32 chars, >= 3 of
+  # upper / lower / digit / special). Not a real production secret.
+  JWT_SECRET: 'Ci.JwtSecret.At_least_32_chars.D1v3rs3!2026'
+
+  # Match src/database/database.provider.ts defaults so
+  # TestPool in test/helpers/test-pool.ts and database.provider.ts
+  # agree on connection params without needing a .env file.
+  DB_HOST: localhost
+  DB_PORT: '5432'
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+  DB_NAME: robinhoot_ci
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Static checks: ESLint (with Prettier integration).
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run ESLint
+        run: pnpm run lint
+
+  # ---------------------------------------------------------------------------
+  # Type-check via tsc --noEmit. Doesn't depend on the Nest build pipeline
+  # so failures surface ~10s faster than running `pnpm run build`.
+  # ---------------------------------------------------------------------------
+  type-check:
+    name: Type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: TypeScript noEmit
+        run: pnpm exec tsc --noEmit
+
+  # ---------------------------------------------------------------------------
+  # Unit tests: *.spec.ts under src/ — no DB required, fastest job.
+  # Mirrors `pnpm run test`. --ci flag disables watch + interactive output.
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run Jest unit suite
+        run: pnpm exec jest --ci
+
+  # ---------------------------------------------------------------------------
+  # Integration tests: test/*.spec.ts (NOT *.e2e-spec.ts).
+  # Uses Postgres service container. Each test wraps its work in a
+  # BEGIN/ROLLBACK transaction (see test/helpers/setup-test-app.ts),
+  # so we still need a real Postgres — the transaction is replayed per
+  # test against a single shared client. Migrations run first so the
+  # schema exists before the transactional fixtures attach.
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration tests (Postgres + rollback)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: robinhoot_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d robinhoot_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply migrations
+        run: pnpm run db:migrate
+      - name: Run integration suite
+        run: pnpm exec jest --config ./test/jest-integration.json --ci
+
+  # ---------------------------------------------------------------------------
+  # E2E tests: test/*.e2e-spec.ts. Same Postgres service shape as
+  # integration-tests because auth-roles.e2e-spec.ts also uses the
+  # rollback-per-test pattern from setup-test-app.ts.
+  # ---------------------------------------------------------------------------
+  e2e-tests:
+    name: E2E tests (Postgres + rollback)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: robinhoot_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d robinhoot_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply migrations
+        run: pnpm run db:migrate
+      - name: Run e2e suite
+        run: pnpm exec jest --config ./test/jest-e2e.json --ci
+
+  # ---------------------------------------------------------------------------
+  # Production build via `nest build`. Catches decorator / reflection
+  # metadata issues that tsc --noEmit misses.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Nest build
+        run: pnpm run build
+
+  # ---------------------------------------------------------------------------
+  # Fallow codebase audit (advisory).
+  #
+  # Fallow is a Rust-native, deterministic codebase-intel tool for
+  # TypeScript / JavaScript. It complements ESLint and tsc by checking
+  # the codebase as a graph: dead code, duplication, complexity hotspots,
+  # architecture-boundary violations, unused dependencies, etc.
+  #
+  # Why advisory (continue-on-error) rather than blocking:
+  #   - The first run surfaces existing baseline issues in the repo.
+  #     Making it blocking would immediately turn the first CI red.
+  #   - Findings are uploaded as SARIF so the team can review them in
+  #     the Security / Code scanning tab and the PR annotations UI.
+  #   - Promote to required after the team adopts a `fallow audit`
+  #     policy in a follow-up change. See .opencode/skills for guidance.
+  # ---------------------------------------------------------------------------
+  fallow-audit:
+    name: Fallow codebase audit (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run fallow audit (changed files vs main)
+        env:
+          # Suppress the cached-latest-version hint in machine output.
+          FALLOW_UPDATE_CHECK: off
+        run: pnpm dlx fallow audit --format sarif > fallow-audit.sarif
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: fallow-audit.sarif
+          category: fallow
+
+  # ---------------------------------------------------------------------------
+  # Aggregator: only runs if every required job succeeded. Acts as the
+  # single signal that downstream workflows (notably ocr-review.yml)
+  # listen to via the workflow_run event.
+  # ---------------------------------------------------------------------------
+  ci-success:
+    name: CI succeeded
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - type-check
+      - unit-tests
+      - integration-tests
+      - e2e-tests
+      - build
+    if: success()
+    steps:
+      - name: Mark CI green
+        run: echo "All required CI jobs passed — downstream workflows may proceed."
