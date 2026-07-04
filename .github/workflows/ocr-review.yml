@@ -201,19 +201,17 @@ jobs:
             core.setOutput("head_sha", pr.head.sha);
 
       - name: Skip when no PR matches workflow_run
-        if: github.event_name == 'workflow_run' && steps.pr-context.outputs.found != 'true'
+        if: steps.pr-context.outputs.found != 'true'
         run: |
           echo "No open PR matches workflow_run head SHA/branch — skipping review."
 
       - name: Checkout repository
-        if: (github.event_name != 'workflow_run' || steps.pr-context.outputs.found == 'true') && steps.ci-status.outputs.ci_succeeded == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Full history needed for merge-base diff
           ref: ${{ github.event.pull_request.head.sha || steps.pr-context.outputs.head_sha }}
 
       - name: Fetch PR head ref (ensures fork commits are available)
-        if: (github.event_name != 'workflow_run' || steps.pr-context.outputs.found == 'true') && steps.ci-status.outputs.ci_succeeded == 'true'
         run: git fetch origin pull/${{ github.event.pull_request.number || github.event.issue.number || steps.pr-context.outputs.pr_number }}/head
 
       - name: Setup Node.js
@@ -223,14 +221,12 @@ jobs:
           node-version: '24'
 
       - name: Install OpenCodeReview
-        if: steps.ci-status.outputs.ci_succeeded == 'true'
         run: |
           npm install -g @alibaba-group/open-code-review
           echo "OpenCodeReview installed with version:"
           ocr version || true
 
       - name: Configure OCR
-        if: steps.ci-status.outputs.ci_succeeded == 'true'
         env:
           OCR_LLM_URL: ${{ secrets.OCR_LLM_URL }}
           OCR_LLM_AUTH_TOKEN: ${{ secrets.OPENCODE_API_KEY}}
@@ -244,7 +240,6 @@ jobs:
 
       - name: Run OpenCodeReview
         id: review
-        if: (github.event_name != 'workflow_run' || steps.pr-context.outputs.found == 'true') && steps.ci-status.outputs.ci_succeeded == 'true'
         run: |
           # Get base ref and head SHA from PR context (different for comment triggers)
           # Note: We use HEAD_SHA instead of origin/${HEAD_REF} to support fork PRs,
@@ -272,7 +267,6 @@ jobs:
           cat /tmp/ocr-stderr.log
 
       - name: Post review comments to PR
-        if: (github.event_name != 'workflow_run' || steps.pr-context.outputs.found == 'true') && steps.ci-status.outputs.ci_succeeded == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
