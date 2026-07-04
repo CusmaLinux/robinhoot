@@ -4,11 +4,8 @@
 # and posts review comments directly on the PR.
 #
 # Triggers:
-#   - workflow_run on the CI workflow completing successfully
-#     (no pull_request event needed; secrets are available in the base repo
-#     context, so fork PRs are reviewed too)
-#   - issue_comment on a PR containing '/open-code-review' or '@open-code-review'
-#     (manual rerun; still requires a successful CI run for the PR head SHA)
+#   - PR opened (uses pull_request for fork secret access)
+#   - Comment on PR containing '/open-code-review' or '@open-code-review'
 #
 # Required secrets:
 #   OCR_LLM_URL        - LLM API endpoint (e.g., https://api.openai.com/v1/chat/completions)
@@ -60,19 +57,12 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  # Manual rerun: a comment containing '/open-code-review' or
-  # '@open-code-review' on a PR triggers a review. The job still verifies
-  # CI has succeeded for the PR head SHA before reviewing (see ci-status).
-
-  # Automatic: review runs after CI completes successfully. workflow_run
-  # fires in the base repo's context, so secrets (OCR_LLM_AUTH_TOKEN,
-  # GITHUB_TOKEN for PR comments) are available without the
-  # pull_request_target / untrusted-code trade-off. The job resolves the
-  # associated PR from workflow_run.head_sha in the pr-context step below.
+  # Use pull_request_target instead of pull_request so that secrets are
+  # available even for PRs from forks. This is safe because OCR only reads
+  # the diff and does not execute any code from the PR.
   workflow_run:
-    workflows: ['CI'] # must match the name: in ci.yml
-    types:
-      - completed
+    workflows: [CI]
+    types: [completed]
 
   issue_comment:
     types: [created]
@@ -85,125 +75,29 @@ jobs:
   code-review:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
+    # Run on PR events, or on comments starting with trigger keywords
     if: |
-      (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success'
-      ) ||
-      (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request &&
-        (
-          startsWith(github.event.comment.body, '/open-code-review') ||
-          startsWith(github.event.comment.body, '@open-code-review')
-        )
-      )
-
+      ${{ github.event.workflow_run.conclusion == 'success' }} &&
+      (github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/open-code-review')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '@open-code-review')))
     steps:
-      #
-      # For workflow_run we already know CI succeeded because the job-level
-      # condition filtered everything else.
-      #
-      # For issue_comment we must verify that the latest CI for the PR HEAD
-      # completed successfully before allowing a manual rerun.
-      #
-      - name: Verify CI succeeded for this PR
-        id: ci-status
-        if: github.event_name == 'issue_comment'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = context.issue.number;
-
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
-
-            const headSha = pr.head.sha;
-
-            const { data } = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head_sha: headSha,
-              per_page: 50,
-            });
-
-            const ciRun = data.workflow_runs.find(run =>
-              run.name === "CI" &&
-              run.head_sha === headSha &&
-              run.status === "completed" &&
-              run.conclusion === "success"
-            );
-
-            core.setOutput("ci_succeeded", ciRun ? "true" : "false");
-
-            core.setOutput(
-              "reason",
-              ciRun
-                ? `CI run ${ciRun.id} succeeded`
-                : `No successful CI run found for ${headSha}`
-            );
-
-      - name: Skip when CI has not succeeded
-        if: github.event_name == 'issue_comment' && steps.ci-status.outputs.ci_succeeded != 'true'
-        run: |
-          echo "Skipping OCR: ${{ steps.ci-status.outputs.reason }}"
-          exit 0
-
-      #
-      # Resolve the PR regardless of which event triggered the workflow.
-      #
-      - name: Resolve PR context
+      - name: Get PR context
         id: pr-context
+        if: github.event_name != 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            if (context.eventName === "workflow_run") {
-
-              const headSha = context.payload.workflow_run.head_sha;
-
-              const { data: prs } = await github.rest.pulls.list({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                state: "open",
-                per_page: 100,
-              });
-
-              const pr = prs.find(p => p.head.sha === headSha);
-
-              if (!pr) {
-                core.setOutput("found", "false");
-                return;
-              }
-
-              core.setOutput("found", "true");
-              core.setOutput("pr_number", String(pr.number));
-              core.setOutput("base_ref", pr.base.ref);
-              core.setOutput("head_ref", pr.head.ref);
-              core.setOutput("head_sha", pr.head.sha);
-
-              return;
-            }
-
-            const { data: pr } = await github.rest.pulls.get({
+            // For issue_comment events, get PR info
+            const prNumber = context.issue.number;
+            const { data: pullRequest } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.issue.number,
+              pull_number: prNumber
             });
-
-            core.setOutput("found", "true");
-            core.setOutput("pr_number", String(pr.number));
-            core.setOutput("base_ref", pr.base.ref);
-            core.setOutput("head_ref", pr.head.ref);
-            core.setOutput("head_sha", pr.head.sha);
-
-      - name: Skip when no PR matches workflow_run
-        if: steps.pr-context.outputs.found != 'true'
-        run: |
-          echo "No open PR matches workflow_run head SHA/branch — skipping review."
+            core.setOutput('base_ref', pullRequest.base.ref);
+            core.setOutput('head_ref', pullRequest.head.ref);
+            core.setOutput('head_sha', pullRequest.head.sha);
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -212,13 +106,14 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || steps.pr-context.outputs.head_sha }}
 
       - name: Fetch PR head ref (ensures fork commits are available)
-        run: git fetch origin pull/${{ github.event.pull_request.number || github.event.issue.number || steps.pr-context.outputs.pr_number }}/head
+        run: git fetch origin pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
 
       - name: Setup Node.js
-        if: steps.ci-status.outputs.ci_succeeded == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: '**/package.lock.json'
 
       - name: Install OpenCodeReview
         run: |
