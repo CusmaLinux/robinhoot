@@ -4,7 +4,7 @@
 # and posts review comments directly on the PR.
 #
 # Triggers:
-#   - workflow_run on the CI workflow completing successfully against main
+#   - workflow_run on the CI workflow completing successfully
 #     (no pull_request event needed; secrets are available in the base repo
 #     context, so fork PRs are reviewed too)
 #   - issue_comment on a PR containing '/open-code-review' or '@open-code-review'
@@ -73,7 +73,6 @@ on:
     workflows: ['CI'] # must match the name: in ci.yml
     types:
       - completed
-    branches: [main] # restrict to CI runs whose head branch is main
 
   issue_comment:
     types: [created]
