@@ -1,5 +1,6 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ExecutionContext } from '@nestjs/common';
+import type { Request } from 'express';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import type { ValidateTokenUseCasePort } from '../../../application/ports/in/validate-token.use-case';
