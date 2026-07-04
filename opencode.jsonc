@@ -3,12 +3,13 @@
   "mcp": {
     "codegraph": {
       "type": "local",
-      "command": [
-        "codegraph",
-        "serve",
-        "--mcp"
-      ],
-      "enabled": true
-    }
-  }
+      "command": ["codegraph", "serve", "--mcp"],
+      "enabled": true,
+    },
+    "fallow": {
+      "type": "local",
+      "command": ["fallow-mcp"],
+      "enabled": true,
+    },
+  },
 }
