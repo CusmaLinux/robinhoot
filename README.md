@@ -207,3 +207,27 @@ To install and set up CodeGraph in your own project:
 3. CodeGraph auto-wires into OpenCode via MCP.
 
 See the [CodeGraph documentation](https://colbymchenry.github.io/codegraph/getting-started/introduction/) for installation, configuration, and advanced usage.
+
+## Code Quality
+
+This project uses [Fallow](https://github.com/fallow-rs/fallow) — a Rust-native codebase intelligence tool for TypeScript and JavaScript. Fallow detects dead code, code duplication, circular dependencies, complexity hotspots, architecture boundary violations, and more, for more information review the [fallow docs](https://docs.fallow.tools/installation).
+
+### Installation
+
+Install fallow-rs globally:
+
+```bash
+pnpm install -g fallow
+```
+
+### Running an audit
+
+The `fallow audit` command analyzes changed files against a base branch and returns a verdict (pass/warn/fail):
+
+```bash
+pnpm fallow audit
+```
+
+### CI integration
+
+Fallow runs as part of the CI pipeline via the `fallow-rs/fallow@v2` GitHub Action — see the [`fallow-audit` job](.github/workflows/ci.yml) for details.
