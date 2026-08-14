@@ -77,10 +77,9 @@ jobs:
     timeout-minutes: 30
     # Run on PR events, or on comments starting with trigger keywords
     if: |
-      ${{ github.event.workflow_run.conclusion == 'success' }} &&
-      (github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/open-code-review')) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '@open-code-review')))
+      (github.event.name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request') ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && (startsWith(github.event.comment.body, '/open-code-review') || startsWith(github.event.comment.body, '@open-code-review')))
     steps:
       - name: Get PR context
         id: pr-context
@@ -89,7 +88,11 @@ jobs:
         with:
           script: |
             // For issue_comment events, get PR info
-            const prNumber = context.issue.number;
+            let prNumber = context.issue.number;
+            if(!prNumber && context.eventName === 'workflow_run') {
+              prNumber = context.payload.workflow_run.pull_request[0].number;
+            }
+
             const { data: pullRequest } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -106,7 +109,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || steps.pr-context.outputs.head_sha }}
 
       - name: Fetch PR head ref (ensures fork commits are available)
-        run: git fetch origin pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number }}"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "Could not determine PR number. Skipping fetch."
+            exit 0
+          fi
+          git fetch origin pull/${PR_NUMBER}/head
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -170,6 +179,15 @@ jobs:
             const crypto = require('crypto');
             const path = '/tmp/ocr-result.json';
 
+            let prNumber = context.issue.number;
+            if (!prNumber && context.eventName === 'workflow_run' && context.payload.workflow_run.pull_requests.length > 0) {
+              prNumber = context.payload.workflow_run.pull_requests[0].number;
+            }
+
+            if (!prNumber) {
+              console.log('❌ Error: Could not determine PR number from event context.');
+              return;
+            }
             // Unique tag for this workflow run + attempt. Embedded in review/comment
             // bodies as an HTML comment so the idempotency check can detect whether
             // a batch createReview actually landed on the server before retrying.
@@ -196,7 +214,7 @@ jobs:
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: context.issue.number,
+                  issue_number: prNumber,
                   body: `⚠️ **OpenCodeReview** encountered an error:\n${fencedBlock(stderr)}`
                 });
               }
@@ -212,14 +230,13 @@ jobs:
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: context.issue.number,
+                issue_number: prNumber,
                 body: `✅ **OpenCodeReview**: ${message}`
               });
               return;
             }
 
             // Prepare PR review with inline comments
-            const prNumber = context.issue.number;
             let commitSha;
 
             // Get commit SHA from event context
