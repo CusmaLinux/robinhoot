@@ -89,8 +89,34 @@ jobs:
           script: |
             // For issue_comment events, get PR info
             let prNumber = context.issue.number;
-            if(!prNumber && context.eventName === 'workflow_run') {
-              prNumber = context.payload.workflow_run.pull_request[0].number;
+            if (!prNumber && context.eventName === 'workflow_run') {
+              // NOTE: the payload field is `pull_requests` (plural, array). It is
+              // also unreliable: GitHub documents it as empty for PRs from forks
+              // and it can be missing entirely. Use it when present, otherwise
+              // fall back to matching the run's head SHA against associated PRs.
+              const prs = context.payload.workflow_run.pull_requests;
+              if (prs && prs.length > 0) {
+                prNumber = prs[0].number;
+              } else {
+                const headSha = context.payload.workflow_run.head_sha;
+                if (headSha) {
+                  const { data: associated } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    commit_sha: headSha
+                  });
+                  const match = associated.find(pr => pr.head.sha === headSha && pr.state === 'open')
+                    || associated.find(pr => pr.head.sha === headSha);
+                  if (match) {
+                    prNumber = match.number;
+                  }
+                }
+              }
+            }
+
+            if (!prNumber) {
+              core.setFailed(`Could not determine PR number from '${context.eventName}' event (run ${context.runId}).`);
+              return;
             }
 
             const { data: pullRequest } = await github.rest.pulls.get({
@@ -98,6 +124,7 @@ jobs:
               repo: context.repo.repo,
               pull_number: prNumber
             });
+            core.setOutput('pr_number', prNumber);
             core.setOutput('base_ref', pullRequest.base.ref);
             core.setOutput('head_ref', pullRequest.head.ref);
             core.setOutput('head_sha', pullRequest.head.sha);
@@ -110,7 +137,7 @@ jobs:
 
       - name: Fetch PR head ref (ensures fork commits are available)
         run: |
-          PR_NUMBER="${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number }}"
+          PR_NUMBER="${{ github.event.pull_request.number || github.event.issue.number || steps.pr-context.outputs.pr_number }}"
           if [ -z "$PR_NUMBER" ]; then
             echo "Could not determine PR number. Skipping fetch."
             exit 0
@@ -172,6 +199,8 @@ jobs:
 
       - name: Post review comments to PR
         uses: actions/github-script@v7
+        env:
+          OCR_PR_NUMBER: ${{ steps.pr-context.outputs.pr_number }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -179,10 +208,10 @@ jobs:
             const crypto = require('crypto');
             const path = '/tmp/ocr-result.json';
 
-            let prNumber = context.issue.number;
-            if (!prNumber && context.eventName === 'workflow_run' && context.payload.workflow_run.pull_requests.length > 0) {
-              prNumber = context.payload.workflow_run.pull_requests[0].number;
-            }
+            // PR number resolved by the "Get PR context" step (which falls back to
+            // head-SHA matching when workflow_run.pull_requests is empty/missing),
+            // or from the issue context on pull_request/issue_comment events.
+            let prNumber = context.issue.number || parseInt(process.env.OCR_PR_NUMBER, 10) || 0;
 
             if (!prNumber) {
               console.log('❌ Error: Could not determine PR number from event context.');
