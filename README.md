@@ -74,6 +74,12 @@ $ mau deploy
  DB_PASSWORD=password
  DB_NAME=robinhoot
  ```
+
+ ### Docker compose setup
+
+ You can use docker ocmpose to execute a container with a postgres database, in the root of the project you can run: 
+
+ `docker compose up -d` 
  
  ### Available Commands
  
