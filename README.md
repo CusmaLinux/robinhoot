@@ -170,6 +170,40 @@ Codex custom agents preserve the three existing roles and inherit the parent mod
 
 OpenCode's `/test` includes an OpenCode-specific model selection. Codex's `$project-test` uses the current model and runs the same suites without requiring that provider.
 
+### RTK: condensed command output in Codex
+
+[RTK](https://github.com/rtk-ai/rtk) reduces the output of supported development commands before Codex receives it, saving context tokens during repetitive work. It integrates through a shell-command hook, independently of the CodeGraph and Fallow MCP connections.
+
+Once the RTK CLI is installed and available on `PATH`, configure it globally:
+
+```bash
+rtk init -g --codex
+```
+
+This creates or updates the following files under `$CODEX_HOME` (default: `~/.codex/`):
+
+| File | Purpose |
+|---|---|
+| `hooks.json` | Runs `rtk hook codex` on `PreToolUse` events matching `Bash` |
+| `AGENTS.md` | References the global `RTK.md` instructions |
+| `RTK.md` | Explains how Codex should handle condensed output and recover unusable results |
+
+The global setup applies across projects; a second project-local RTK setup is unnecessary. Restart Codex after installation. In Codex CLI, open `/hooks` and review and trust the RTK hook if it is awaiting approval. Codex skips untrusted hooks; see the [Codex hook documentation](https://learn.chatgpt.com/docs/hooks).
+
+For supported commands, the flow is: Codex requests a shell command → the hook returns `updatedInput` with an RTK wrapper → Codex applies its normal approval and sandbox checks → RTK executes the command and returns condensed output. For example, `git status` becomes `rtk git status`.
+
+Check installation, preview a rewrite without executing it, and inspect recorded savings:
+
+```bash
+rtk init -g --codex --show
+rtk hook check --agent codex git status
+rtk gain
+```
+
+To verify automatic execution, ask Codex to run `git status` normally, then inspect `rtk gain`. A successful rewrite preview proves the RTK processor works, but does not prove Codex loaded and trusted the hook. If savings remain empty, check `/hooks` and restart the session. Running plain `git status` directly in your own terminal does not invoke Codex's hook.
+
+RTK filters supported shell-command output; it does not automatically condense CodeGraph or Fallow MCP responses. Follow any recovery instructions in condensed results. Use `rtk bypass <command>` to recover raw output when the condensed result is unusable.
+
 ### OpenSpec
 
 [OpenSpec](https://github.com/Fission-AI/OpenSpec/blob/main/docs/getting-started.md) is a spec-driven development workflow integrated into this project. Changes are planned and tracked as structured artifacts (proposals, designs, specs, tasks) under `openspec/`. Use the commands below to interact with the OpenSpec lifecycle.
