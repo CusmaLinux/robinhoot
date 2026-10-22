@@ -1,0 +1,11 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]
+startup_timeout_sec = 60
+
+[mcp_servers.fallow]
+command = "pnpm"
+args = ["exec", "fallow-mcp"]
+startup_timeout_sec = 60

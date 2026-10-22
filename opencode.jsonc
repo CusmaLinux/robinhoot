@@ -8,7 +8,7 @@
     },
     "fallow": {
       "type": "local",
-      "command": ["fallow-mcp"],
+      "command": ["pnpm", "exec", "fallow-mcp"],
       "enabled": true,
     },
   },

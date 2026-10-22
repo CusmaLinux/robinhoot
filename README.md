@@ -77,7 +77,7 @@ $ mau deploy
 
  ### Docker compose setup
 
- You can use docker ocmpose to execute a container with a postgres database, in the root of the project you can run: 
+ You can use docker compose to execute a container with a postgres database, in the root of the project you can run: 
 
  `docker compose up -d` 
  
@@ -141,9 +141,34 @@ $ mau deploy
  
  While the application follows Hexagonal Architecture and Vertical Slices, the database schema and migrations are treated as centralized, cross-cutting infrastructure. Feature modules (like `users` or `products`) interact with Kysely via their Outbound Adapters (e.g., `user.kysely.adapter.ts`).
 
-## OpenCode
+## AI assistants: OpenCode and Codex
 
-This project uses [OpenCode](https://opencode.ai/docs) — an AI-native coding assistant. Below are the project-specific configurations and tooling.
+This project supports [OpenCode](https://opencode.ai/docs) and Codex from the same checkout. Both read `AGENTS.md`, share domain skills, OpenSpec artifacts, and Fallow configuration. Switching assistants does not require moving specifications or changing application code. Conversation history stays in the assistant where it was created.
+
+### Quick start
+
+```bash
+pnpm install --frozen-lockfile
+pnpm exec openspec list --json
+pnpm exec fallow --version
+```
+
+Open the repository in either assistant. Codex reads the project-scoped MCP configuration in [`.codex/config.toml`](.codex/config.toml) for trusted projects. OpenCode reads [`opencode.jsonc`](opencode.jsonc). Both start Fallow with `pnpm exec fallow-mcp`; CodeGraph uses the installed `codegraph` CLI.
+
+After changing MCP or custom-agent configuration, start a fresh Codex chat; restart the app if the tools do not appear. Check the effective CLI configuration with `codex mcp list`. A configuration listing alone does not prove a server started successfully.
+
+| Capability | OpenCode | Codex |
+|---|---|---|
+| Project instructions | `AGENTS.md` | `AGENTS.md` |
+| Domain skills | `.agents/skills/` | `.agents/skills/` |
+| OpenSpec workflows | `/opsx-propose`, `/opsx-explore`, `/opsx-apply`, `/opsx-sync`, `/opsx-archive` | `$openspec-propose`, `$openspec-explore`, `$openspec-apply-change`, `$openspec-sync-specs`, `$openspec-archive-change` |
+| Test review | `/test` | `$project-test` |
+| Custom agents | `.opencode/agents/*.md` | `.codex/agents/*.toml` |
+| MCP configuration | `opencode.jsonc` | `.codex/config.toml` |
+
+Codex custom agents preserve the three existing roles and inherit the parent model and permissions. `docs-writer` and `review` disable shell tools. Read-only review and security-audit behavior is also specified in their instructions; this does not create a separate read-only sandbox. Ask explicitly to delegate, for example: “Use the security-auditor agent to review this change.”
+
+OpenCode's `/test` includes an OpenCode-specific model selection. Codex's `$project-test` uses the current model and runs the same suites without requiring that provider.
 
 ### OpenSpec
 
@@ -165,8 +190,9 @@ Skills encapsulate reusable expertise for the AI assistant. This project defines
 - **to-issues** — Break plans into traceable issues
 - **to-prd** — Generate PRDs from conversation context
 - **typescript-advanced-types** — Advanced TypeScript type system patterns
+- **project-test** — Complete test and coverage review (Codex equivalent of `/test`)
 
-**OpenSpec workflow skills** (`.opencode/skills/`):
+**OpenSpec workflow skills** (maintained in `.opencode/skills/`, linked into `.agents/skills/` for Codex):
 - **openspec-propose** — Create a new change with proposal, design, and tasks
 - **openspec-apply-change** — Implement tasks from an OpenSpec change
 - **openspec-archive-change** — Archive a completed change
@@ -175,7 +201,7 @@ Skills encapsulate reusable expertise for the AI assistant. This project defines
 
 ### Sub-Agents
 
-Specialized sub-agents are available for focused tasks. They are defined in [`.opencode/agents/`](.opencode/agents/):
+Specialized sub-agents are available for focused tasks. OpenCode definitions are in [`.opencode/agents/`](.opencode/agents/); matching Codex definitions are in [`.codex/agents/`](.codex/agents/):
 
 | Agent | Description |
 |-------|-------------|
@@ -185,12 +211,12 @@ Specialized sub-agents are available for focused tasks. They are defined in [`.o
 
 ### GitHub Actions
 
-Two GitHub Actions workflows integrate OpenCode into CI/CD:
+Two GitHub Actions workflows provide OpenCode integrations in CI/CD. These remain independent of the local assistant you use:
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | [`opencode.yml`](.github/workflows/opencode.yml) | Issue / PR review comments containing `/oc` or `/opencode` | Run OpenCode on demand via comments |
-| [`opencode-review.yml`](.github/workflows/opencode-review.yml) | PR opened, synchronized, reopened, ready for review | Automated code review on every PR |
+| [`ocr-review.yml`](.github/workflows/ocr-review.yml) | CI workflow completion | OpenCodeReview PR review after CI |
 
 ### Custom Commands
 
@@ -208,9 +234,12 @@ When you run `codegraph init`, a `.codegraph/` directory is created at the proje
 
 To install and set up CodeGraph in your own project:
 
-1. Install the CLI: `npx @colbymchenry/codegraph` (or `codegraph install`)
-2. Index your project: `codegraph init`
-3. CodeGraph auto-wires into OpenCode via MCP.
+1. Install the CLI following the linked CodeGraph installation guide.
+2. Index your project: `codegraph init --yes`.
+3. This repository already declares the CodeGraph MCP connection for both assistants.
+4. Verify the index with `codegraph status`; query it with `codegraph explore "<question>"`.
+
+The `.codegraph/` index is local and ignored by Git. On a new checkout, initialize it before using indexed code queries. The MCP launcher `codegraph serve --mcp` remains supported by the installed CLI even though `serve` is hidden from its help output.
 
 See the [CodeGraph documentation](https://colbymchenry.github.io/codegraph/getting-started/introduction/) for installation, configuration, and advanced usage.
 
@@ -220,20 +249,30 @@ This project uses [Fallow](https://github.com/fallow-rs/fallow) — a Rust-nativ
 
 ### Installation
 
-Install fallow-rs globally:
+Fallow and OpenSpec are project devDependencies, pinned through `pnpm-lock.yaml`. Install them with the rest of the project:
 
 ```bash
-pnpm install -g fallow
+pnpm install --frozen-lockfile
 ```
+
+No global Fallow or OpenSpec installation is required. Use `pnpm exec fallow` and `pnpm exec openspec` for direct CLI commands.
 
 ### Running an audit
 
 The `fallow audit` command analyzes changed files against a base branch and returns a verdict (pass/warn/fail):
 
 ```bash
-pnpm fallow audit
+pnpm exec fallow audit
 ```
 
 ### CI integration
 
-Fallow runs as part of the CI pipeline via the `fallow-rs/fallow@v2` GitHub Action — see the [`fallow-audit` job](.github/workflows/ci.yml) for details.
+Fallow runs as part of the CI pipeline via the `fallow-rs/fallow@v3` GitHub Action — see the [`fallow-audit` job](.github/workflows/ci.yml) for details.
+
+### Maintaining the shared setup
+
+The five `.agents/skills/openspec-*` entries are relative symlinks to the existing OpenCode workflows. Edit the target files to update both assistants. Shared workflows mention OpenCode tool names and `/opsx-*`; `AGENTS.md` maps those to Codex tools and skills, including the project-local OpenSpec CLI. If regenerating workflows with `pnpm exec openspec init` or `update`, review the diff and preserve this shared arrangement.
+
+Codex and OpenCode custom-agent definitions use different formats and must be updated together when role behavior changes. Their CI workflows are not migrated by the local Codex configuration.
+
+`pnpm run test:all` currently runs unit coverage and integration tests only; run e2e separately or use the assistant's complete test-review workflow.

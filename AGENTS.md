@@ -41,3 +41,26 @@ In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the re
 
 If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
 <!-- CODEGRAPH_END -->
+
+## Shared assistant tooling (OpenCode and Codex)
+
+- Shared domain skills live in `.agents/skills/`. OpenSpec skills there link to
+  `.opencode/skills/` so both assistants use the same workflows.
+- OpenSpec CLI: `pnpm exec openspec <command>`. For generated workflows that say
+  `openspec ...`, use `pnpm exec openspec ...` when it is not on PATH.
+- In Codex, invoke `$openspec-propose`, `$openspec-explore`,
+  `$openspec-apply-change`, `$openspec-sync-specs`, or `$openspec-archive-change`.
+  References to `/opsx-*` in shared workflows mean the corresponding skill.
+  Translate OpenCode-specific tool names (AskUserQuestion, TodoWrite, Task,
+  Skill) to available Codex equivalents; if no equivalent exists, carry out the
+  step directly. Ask questions in chat when no question tool is available.
+- Fallow MCP is configured in both assistants. CLI fallback:
+  `pnpm exec fallow audit --format json --quiet`. Findings are not an execution
+  failure; distinguish the tool's findings status from runtime errors. Do not
+  apply automated fixes unless they are part of the requested work.
+- Codex custom agents live in `.codex/agents/`: `docs-writer`, `review`, and
+  `security-auditor`. Use them when the user requests delegation. They inherit
+  the parent session's permissions. Review and security audits must not edit
+  files; docs-writer and review have shell tools disabled.
+- OpenCode `/test` corresponds to Codex `$project-test`. Database-backed tests
+  require the test database; do not silently substitute the production database.
