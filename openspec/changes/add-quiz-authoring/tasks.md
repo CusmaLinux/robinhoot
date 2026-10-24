@@ -20,10 +20,14 @@ Issue #47 evidence: [HTTP/PostgreSQL transport tests](../../../test/quiz.control
 
 ## 3. Edit, order, and validate questions
 
-- [ ] 3.1 Test one draft-save behavior then implement atomic updates with stable question/option IDs; verify API save and subsequent read preserve text and choices.
-- [ ] 3.2 Test and implement readiness errors for title, count, four multiple-choice options, one correct choice, and supported durations; verify incomplete drafts save but fail hostability with field errors.
-- [ ] 3.3 Add and test question reordering through the API; verify a two-question quiz reopens in the chosen order and document the request/response examples.
-- [ ] 3.4 Test malformed draft inputs and unauthorized mutations, then implement rejection; verify existing data remains unchanged on errors.
+- [x] 3.1 Test one draft-save behavior then implement atomic updates with stable question/option IDs; verify API save and subsequent read preserve text and choices.
+- [x] 3.2 Test and implement readiness errors for title, count, four multiple-choice options, one correct choice, and supported durations; verify incomplete drafts save but fail hostability with field errors.
+- [x] 3.3 Add and test question reordering through the API; verify a two-question quiz reopens in the chosen order and document the request/response examples.
+- [x] 3.4 Test malformed draft inputs and unauthorized mutations, then implement rejection; verify existing data remains unchanged on errors.
+
+Issue #48 evidence: the [HTTP/PostgreSQL suite](../../../test/quiz.controller.spec.ts) verifies atomic full saves, stable IDs, question/option ordering, field-specific incomplete readiness, structural bounds, duplicate/dangling ID rejection, owner/admin denial, invalid credentials, unchanged content/timestamps on rejection, generated OpenAPI request/response parity, and committed edits reopened through an independent app/pool. The [pure domain suite](../../../src/quiz/domain/quiz.spec.ts) checks readiness and numeric boundaries. Save/retrieve, incomplete readiness, duplicate question/option identities, dangling references, repeated correct IDs, and nested-array rejection were exercised red-to-green. Reordering was verified through the aggregate save path. See the [contract handoff](../../../docs/contracts/quiz-drafts.md) and [updated component/sequence/state diagrams](../../../docs/architecture/quiz-drafts.md).
+
+Verification (2026-10-24): isolated PostgreSQL 17 database `robinhoot_issue48_test`, loopback port 55448, test-only credentials, and all four existing migrations. Unit: 71 tests / 15 suites. Integration: 92 tests / 3 suites, including 79 quiz HTTP tests. E2E: 4 tests. Build, TypeScript, strict change validation, and whitespace checks pass. Read-only ESLint has zero errors and only the two pre-existing auth guard test warnings; changed code has no warnings. Advisory Fallow audit passes with no introduced findings. No new schema migration or production database change. Existing six main authentication specs and #47 implementation were reviewed before this slice. Tasks 4.1–4.3, final review, and full-change archival remain pending for #49.
 
 ## 4. Delete and demonstrate the authoring slice
 

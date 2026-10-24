@@ -2,13 +2,21 @@
 
 ## Context
 
-See proposal.md for motivation and specs/quiz-authoring/spec.md for behavior. The repository contains a NestJS backend with an auth module and Kysely database provider. Issue #46 reconstructs six current main auth specs; see [baseline evidence](../../../docs/authentication-baseline.md) for reconciled differences and verification limits. Issue #47 implements private draft create/list/read; editing, reordering, full question readiness, and deletion remain pending.
+See proposal.md for motivation and specs/quiz-authoring/spec.md for behavior. The repository contains a NestJS backend with an auth module and Kysely database provider. Issue #46 reconstructs six current main auth specs; see [baseline evidence](../../../docs/authentication-baseline.md) for reconciled differences and verification limits. Issue #47 implements private draft create/list/read; issue #48 adds editing, ordering, and full multiple-choice readiness. Deletion and final stage acceptance remain pending in #49.
 
 ## Implemented draft slice (issue #47)
 
 The [current API contract](../../../docs/contracts/quiz-drafts.md) and [architecture/state/sequence diagrams](../../../docs/architecture/quiz-drafts.md) document the create/list/read behavior. POST accepts an optional title (string, at most 200 characters), creates an empty question collection, and returns persisted content plus readiness errors. Creation does not accept questions or caller-selected ownership; question input/save belongs to issue #48. Lists return owned summaries ordered newest first, then UUID descending. Read/list use owner predicates in the database query; foreign and missing resources return identical 404s.
 
 The reconciled six main authentication specs and predecessor #46 were rechecked before implementation; existing authentication behavior is reused. Test evidence is maintained with tasks 2.1–2.3. This partial slice does not archive the full authoring change or mark later tasks complete.
+
+## Implemented editing slice (issue #48)
+
+PUT replaces the full `{ title, questions }` aggregate in a single owner-scoped `UPDATE ... RETURNING` over the existing JSONB row; no migration is needed. The database supplies the update timestamp. Arrays define question/option order. Clients generate required UUIDs once and retain them on edit/reorder; identity scope is quiz/question, with case-insensitive uniqueness and reference checks. Correctness is an array of option UUIDs so incomplete drafts can contain zero or multiple distinct selections, while hostability requires exactly one.
+
+Boundary DTOs require the complete nested shape, reject unknown fields and nested arrays masquerading as objects, and cap title/prompt/option text at 200/2000/1000 characters, questions at twenty and options/correct IDs at four. A duration is null or an integer from 0–3600 structurally, with 10/20/30/60 required for readiness. Domain checks reject duplicate IDs and dangling correct references before the repository writes. Domain readiness reports field paths using saved zero-based array positions. GET and list derive readiness from saved content. Concurrent full saves are last-write-wins; revision detection is outside this slice.
+
+See the [contract](../../../docs/contracts/quiz-drafts.md) for complete examples and structural/readiness distinctions, and the [diagrams](../../../docs/architecture/quiz-drafts.md) for save sequences and state transitions. Existing main authentication specs and #47 implementation were reread before applying this slice. The full authoring change remains active until #49 verifies deletion and final handoff; it is not archived at this partial boundary.
 
 ## Goals / Non-Goals
 

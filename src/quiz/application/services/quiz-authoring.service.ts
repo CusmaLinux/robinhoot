@@ -6,7 +6,8 @@ import type {
   QuizDetail,
   QuizSummary,
 } from '../ports/in/quiz-authoring.use-case';
-import { quizReadiness } from '../../domain/quiz';
+import { assertQuizStructure, quizReadiness } from '../../domain/quiz';
+import type { QuizContent } from '../../domain/quiz';
 
 @Injectable()
 export class QuizAuthoringService implements QuizAuthoringUseCasePort {
@@ -14,6 +15,16 @@ export class QuizAuthoringService implements QuizAuthoringUseCasePort {
     @Inject(QUIZ_REPOSITORY_PORT)
     private readonly repository: QuizRepositoryPort,
   ) {}
+
+  async save(
+    ownerId: string,
+    id: string,
+    content: QuizContent,
+  ): Promise<QuizDetail | null> {
+    assertQuizStructure(content);
+    const quiz = await this.repository.saveOwned(ownerId, id, content);
+    return quiz ? { ...quiz, ...quizReadiness(quiz) } : null;
+  }
 
   async create(ownerId: string, title: string): Promise<QuizDetail> {
     const quiz = await this.repository.create(ownerId, title);

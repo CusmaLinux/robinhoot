@@ -1,4 +1,5 @@
 import { ColumnType, Generated } from 'kysely';
+import type { QuizQuestion } from '../quiz/domain/quiz';
 
 export interface UsersTable {
   id: Generated<string>;
@@ -20,7 +21,7 @@ export interface QuizzesTable {
   id: Generated<string>;
   owner_id: string;
   title: string;
-  questions: ColumnType<never[], string, string>;
+  questions: ColumnType<QuizQuestion[], string, string>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }

@@ -46,3 +46,46 @@ export const QUIZ_BAD_ID_EXAMPLE = {
   message: 'Validation failed (uuid is expected)',
   error: 'Bad Request',
 };
+
+export const SAVE_QUIZ_EXAMPLE = {
+  title: 'Biology',
+  questions: [
+    {
+      id: '10000000-0000-4000-8000-000000000001',
+      type: 'multiple-choice',
+      prompt: 'Which cell contains a nucleus?',
+      options: [
+        { id: '20000000-0000-4000-8000-000000000001', text: 'Animal' },
+        { id: '20000000-0000-4000-8000-000000000002', text: 'Bacterium' },
+        { id: '20000000-0000-4000-8000-000000000003', text: 'Virus' },
+        { id: '20000000-0000-4000-8000-000000000004', text: 'None' },
+      ],
+      correctOptionIds: ['20000000-0000-4000-8000-000000000001'],
+      durationSeconds: 20,
+    },
+  ],
+};
+
+export const HOSTABLE_QUIZ_EXAMPLE = {
+  ...EMPTY_DRAFT_EXAMPLE,
+  ...SAVE_QUIZ_EXAMPLE,
+  hostable: true,
+  errors: [],
+};
+
+export const INCOMPLETE_SAVE_EXAMPLE = {
+  ...SAVE_QUIZ_EXAMPLE,
+  questions: [{ ...SAVE_QUIZ_EXAMPLE.questions[0], durationSeconds: 15 }],
+};
+
+export const INCOMPLETE_QUIZ_EXAMPLE = {
+  ...EMPTY_DRAFT_EXAMPLE,
+  ...INCOMPLETE_SAVE_EXAMPLE,
+  errors: [
+    {
+      field: 'questions[0].durationSeconds',
+      code: 'DURATION',
+      message: 'Duration must be 10, 20, 30, or 60 seconds',
+    },
+  ],
+};

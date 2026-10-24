@@ -1,10 +1,19 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { QuizQuestionDto } from './save-quiz.dto';
 
 class ReadinessErrorDto {
   @ApiProperty({ example: 'title' })
   field!: string;
 
-  @ApiProperty({ enum: ['REQUIRED', 'QUESTION_COUNT'] })
+  @ApiProperty({
+    enum: [
+      'REQUIRED',
+      'QUESTION_COUNT',
+      'OPTION_COUNT',
+      'CORRECT_OPTION_COUNT',
+      'DURATION',
+    ],
+  })
   code!: string;
 
   @ApiProperty({ example: 'Title is required' })
@@ -39,13 +48,11 @@ export class QuizDetailDto {
   title!: string;
 
   @ApiProperty({
-    type: 'array',
-    items: {},
-    maxItems: 0,
-    description:
-      'Empty at creation. Question editing is delivered separately in issue #48.',
+    type: [QuizQuestionDto],
+    maxItems: 20,
+    description: 'Saved questions in explicit array order.',
   })
-  questions!: never[];
+  questions!: QuizQuestionDto[];
 
   @ApiProperty({ format: 'date-time', type: String })
   createdAt!: Date;
