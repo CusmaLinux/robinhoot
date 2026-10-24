@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Kysely, PostgresDialect } from 'kysely';
 import { AppModule } from '../../src/app.module';
@@ -6,7 +6,9 @@ import { KYSELY_TOKEN } from '../../src/database/database.provider';
 import { Database } from '../../src/database/database.types';
 import { TestPool } from './test-pool';
 
-export async function createTestApp(): Promise<{
+export async function createTestApp(
+  options: { validation?: boolean } = {},
+): Promise<{
   app: INestApplication;
   pool: TestPool;
   db: Kysely<Database>;
@@ -32,6 +34,15 @@ export async function createTestApp(): Promise<{
     .compile();
 
   const app = moduleFixture.createNestApplication();
+  if (options.validation) {
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+  }
   await app.init();
 
   return { app, pool, db };

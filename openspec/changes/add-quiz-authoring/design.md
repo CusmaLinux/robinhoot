@@ -2,7 +2,13 @@
 
 ## Context
 
-See proposal.md for motivation and specs/quiz-authoring/spec.md for behavior. The repository contains a NestJS backend with an auth module and Kysely database provider. Issue #46 reconstructs six current main auth specs; see [baseline evidence](../../../docs/authentication-baseline.md) for reconciled differences and verification limits. Quiz endpoints remain unimplemented.
+See proposal.md for motivation and specs/quiz-authoring/spec.md for behavior. The repository contains a NestJS backend with an auth module and Kysely database provider. Issue #46 reconstructs six current main auth specs; see [baseline evidence](../../../docs/authentication-baseline.md) for reconciled differences and verification limits. Issue #47 implements private draft create/list/read; editing, reordering, full question readiness, and deletion remain pending.
+
+## Implemented draft slice (issue #47)
+
+The [current API contract](../../../docs/contracts/quiz-drafts.md) and [architecture/state/sequence diagrams](../../../docs/architecture/quiz-drafts.md) document the create/list/read behavior. POST accepts an optional title (string, at most 200 characters), creates an empty question collection, and returns persisted content plus readiness errors. Creation does not accept questions or caller-selected ownership; question input/save belongs to issue #48. Lists return owned summaries ordered newest first, then UUID descending. Read/list use owner predicates in the database query; foreign and missing resources return identical 404s.
+
+The reconciled six main authentication specs and predecessor #46 were rechecked before implementation; existing authentication behavior is reused. Test evidence is maintained with tasks 2.1–2.3. This partial slice does not archive the full authoring change or mark later tasks complete.
 
 ## Goals / Non-Goals
 

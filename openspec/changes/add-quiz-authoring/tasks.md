@@ -12,9 +12,11 @@ Evidence: [authentication baseline reconciliation](../../../docs/authentication-
 
 ## 2. Create and reopen a private draft
 
-- [ ] 2.1 Write one failing create-draft behavior test, then add only the required domain/use-case ports, Kysely migration/adapter, and authenticated endpoint; verify a dedicated-test-database create/read round trip and document the endpoint.
-- [ ] 2.2 Exercise create/list/read through HTTP integration tests and document examples; verify a newly created empty draft persists across requests and only the owner's summaries are returned.
-- [ ] 2.3 Add cross-owner and unauthenticated access scenarios one at a time; verify user/admin accounts cannot read foreign drafts and invalid credentials return 401.
+- [x] 2.1 Write one failing create-draft behavior test, then add only the required domain/use-case ports, Kysely migration/adapter, and authenticated endpoint; verify a dedicated-test-database create/read round trip and document the endpoint.
+- [x] 2.2 Exercise create/list/read through HTTP integration tests and document examples; verify a newly created empty draft persists across requests and only the owner's summaries are returned.
+- [x] 2.3 Add cross-owner and unauthenticated access scenarios one at a time; verify user/admin accounts cannot read foreign drafts and invalid credentials return 401.
+
+Issue #47 evidence: [HTTP/PostgreSQL transport tests](../../../test/quiz.controller.spec.ts), [public contract and OpenAPI handoff](../../../docs/contracts/quiz-drafts.md), and [current architecture diagrams](../../../docs/architecture/quiz-drafts.md). The create, reopen, list, ownership-input, and titled-draft behaviors were exercised red-to-green. Dedicated PostgreSQL database `robinhoot_issue47_test` on loopback port 55447 was migrated independently of the application database. Tests include committed persistence through a second app/pool, user/admin foreign-read denial, missing/expired/invalid/revoked credentials, structural input rejection, and generated OpenAPI example parity. Full question readiness/edit/delete and the authoring stage's final review remain pending under tasks 3–4; this change is not ready to archive.
 
 ## 3. Edit, order, and validate questions
 

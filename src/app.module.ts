@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/infrastructure/auth.module';
 import { DatabaseModule } from './database/database.module';
+import { QuizModule } from './quiz/infrastructure/quiz.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { DatabaseModule } from './database/database.module';
     ]),
     DatabaseModule,
     AuthModule,
+    QuizModule,
   ],
   controllers: [],
   providers: [],
