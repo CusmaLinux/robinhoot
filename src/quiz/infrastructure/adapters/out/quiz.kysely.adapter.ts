@@ -1,0 +1,61 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { Kysely, sql } from 'kysely';
+import { KYSELY_TOKEN } from '../../../../database/database.provider';
+import type { Database } from '../../../../database/database.types';
+import type { Quiz } from '../../../domain/quiz';
+import type { QuizRepositoryPort } from '../../../application/ports/out/quiz.repository.port';
+
+@Injectable()
+export class QuizKyselyAdapter implements QuizRepositoryPort {
+  constructor(@Inject(KYSELY_TOKEN) private readonly db: Kysely<Database>) {}
+
+  async create(ownerId: string, title: string): Promise<Quiz> {
+    const row = await this.db
+      .insertInto('quizzes')
+      .values({ owner_id: ownerId, title, questions: sql`'[]'::jsonb` })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    return {
+      id: row.id,
+      title: row.title,
+      questions: row.questions,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async findOwned(ownerId: string, id: string): Promise<Quiz | null> {
+    const row = await this.db
+      .selectFrom('quizzes')
+      .selectAll()
+      .where('owner_id', '=', ownerId)
+      .where('id', '=', id)
+      .executeTakeFirst();
+    return row
+      ? {
+          id: row.id,
+          title: row.title,
+          questions: row.questions,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }
+      : null;
+  }
+
+  async listOwned(ownerId: string): Promise<Quiz[]> {
+    const rows = await this.db
+      .selectFrom('quizzes')
+      .selectAll()
+      .where('owner_id', '=', ownerId)
+      .orderBy('created_at', 'desc')
+      .orderBy('id', 'desc')
+      .execute();
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      questions: row.questions,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+}
