@@ -13,4 +13,14 @@ type UserRole = 'user' | 'admin';
 
 export interface Database {
   users: UsersTable;
+  quizzes: QuizzesTable;
+}
+
+export interface QuizzesTable {
+  id: Generated<string>;
+  owner_id: string;
+  title: string;
+  questions: ColumnType<never[], string, string>;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
 }
