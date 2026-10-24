@@ -1,20 +1,25 @@
 schema: spec-driven
 
 context: |
-  Tech stack: TypeScript, NestJS 11, Node.js, PostgreSQL (Kysely query builder), JWT + Passport, Swagger, Jest, bcrypt
+  Tech stack: TypeScript, NestJS 11, Node.js, PostgreSQL (Kysely query builder), JWT + custom NestJS HTTP guards, Swagger, Jest, bcrypt
   Package manager: pnpm (never npm/yarn)
-  API style: RESTful, documented via Swagger at /api
+  API style: RESTful, Swagger at /api in non-production bootstrap (not an endpoint prefix)
   Testing: Jest with ts-jest, unit tests (*.spec.ts) co-located, e2e tests (*.e2e-spec.ts) in test/
   Architecture: Hexagonal (Ports & Adapters) - see .agents/skills/hexagonal-architecture/
   TDD approach: Vertical tracer bullets - one test → one implementation → repeat (see .agents/skills/tdd/)
   Domain: Educational platform for real-time exercises ("Robinhoot")
+  Repository scope: API only. The existing UI is maintained in a separate repository; its framework, routes, rendering, accessibility, token storage, and deployment are owned there.
+  Integration: This repository owns REST/OpenAPI and Socket.IO contracts, authentication/authorization, domain rules, persistence, API deployment, and API-level tests. Document UI dependencies without implementing UI work here.
 
 rules:
-  apply:
-    - 'Follow Test-Driven Development (TDD): write one test for one behavior, then minimal implementation. No horizontal slicing.'
+  design:
     - 'Adhere to Hexagonal Architecture principles: domain has no external dependencies, ports are interfaces in application/, adapters are in infrastructure/. Dependency direction always inward.'
     - 'Use DI tokens (Symbols) for port implementations, never inject concrete infrastructure classes into application services.'
     - 'Keep validation at boundaries: NestJS pipes/DTOs in inbound adapters + use-case invariants in application services.'
+  tasks:
+    - 'Follow Test-Driven Development (TDD): write one test for one behavior, then minimal implementation. No horizontal slicing.'
+    - 'Include architecture checks: domain has no external dependencies, application depends on ports, adapters are in infrastructure, and DI uses Symbol tokens.'
+    - 'Keep tracked tasks API-only; verify behaviors through HTTP/Socket.IO contracts and record separate UI work as cross-repository follow-up.'
   proposal:
     - Include rollback plan
     - Identify affected teams
@@ -22,3 +27,4 @@ rules:
   specs:
     - Use Given/When/Then format for behavioral specs
     - Focus on public interface behavior, not implementation details
+    - 'Specify API inputs, outputs, errors, events, and invariants; leave screens, rendering, accessibility, and client storage decisions to the separate UI repository.'

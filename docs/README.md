@@ -1,0 +1,21 @@
+# Robinhoot API documentation
+
+This repository implements the API. The existing UI is maintained separately; see [API/UI ownership](api-ui-boundary.md) for integration and completion responsibilities.
+
+## Implemented behavior
+
+- [Authentication API contract](contracts/authentication.md): current requests, responses, validation, expiry, revocation, and role semantics.
+- [Authentication baseline reconciliation](authentication-baseline.md): source/test evidence, differences from archived notes, and verification limits.
+- [Main behavioral specifications](../openspec/specs/): reconciled current authentication capabilities.
+
+## MVP planning and delivery
+
+- [MVP development guide](mvp-development-guide.md): proposed API scope, game rules, ordered changes, and review workflow.
+- [Published issue map](mvp-issue-map.md): links from the API epic and implementation issues to OpenSpec changes/tasks.
+- [Active change proposals](../openspec/changes/): future behavior, design, and tracked work. Their presence does not imply the capabilities are implemented.
+
+## Use cases and diagrams
+
+Use professor and guest goals to connect issues to observable API behavior. Add proposed Mermaid domain, sequence, component, and state diagrams to a change's design when they help explain a decision. Show the separately maintained UI as an external consumer.
+
+As implementation lands, maintain verified current architecture in `docs/architecture/`; create those documents when useful rather than scaffolding empty diagrams. Archived change designs remain historical context. Keep behavioral requirements in OpenSpec and avoid duplicating them in a second specification tree.
