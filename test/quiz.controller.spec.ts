@@ -59,7 +59,9 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
     token = (login.body as { accessToken: string }).accessToken;
   });
 
-  afterEach(async () => rollbackTransaction(pool));
+  afterEach(async () => {
+    if (pool) await rollbackTransaction(pool);
+  });
   afterAll(async () => {
     if (app) await destroyTestApp(app, db);
   });

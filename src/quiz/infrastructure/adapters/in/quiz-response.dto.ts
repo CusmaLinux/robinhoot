@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class ReadinessErrorDto {
+class ReadinessErrorDto {
   @ApiProperty({ example: 'title' })
   field!: string;
 

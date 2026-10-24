@@ -57,3 +57,5 @@ stateDiagram-v2
 ```
 
 The aggregate is a single row: generated UUID, owner UUID referencing `users`, a title capped at 200 characters, empty JSONB questions, and creation/update timestamps. No in-memory draft cache exists. A dedicated database integration test proves that an independently constructed app with its own database connection can reopen committed content.
+
+Kysely's `FileMigrationProvider` loads migration files by directory at runtime. `.fallowrc.json` declares that directory as an entry point so static analysis recognizes these database lifecycle exports without adding artificial imports or hiding dead-code rules. The CI audit installs project dependencies before analysis to avoid degraded dependency resolution.
