@@ -37,6 +37,38 @@ and [current diagrams](../../../docs/architecture/room-creation.md). Socket host
 authentication and lifecycle transitions remain in #51–#53; no socket event is
 introduced by the creation slice.
 
+Issue #51 contract review (2026-10-25): predecessor #50 merged at `fbb3aba`;
+reviewed the actual frozen snapshot/store/HTTP contract and the current main
+quiz-authoring, user-auth, and jwt-guard specs. The authoring archive remains
+`2026-10-24-add-quiz-authoring`. Admission composes with those contracts without
+changing ownership or HTTP authentication. See the
+[implemented admission contract](../../../docs/contracts/lobby-admission.md) and
+[current architecture](../../../docs/architecture/lobby-admission.md).
+
+Issue #51 decisions: default namespace `/`, Socket.IO path `/socket.io`, and
+`host.bind {roomId}` with handshake `auth.token` establish host subscriptions.
+Only `lobby.join` is public; private gateway messages explicitly use the existing
+JWT validator on every message and compare the verified account with host.ownerId.
+`lobby.roster` publishes an explicit safe state projection. Guest credentials
+have 256 random bits and a stored SHA-256 verifier bound to room/player.
+Admission receipts are one per guest (at most thirty), bound to original
+connection/request UUID/trimmed nickname; only that connection can recover the
+secret after an acknowledgement timeout. Disconnect erases the receipt plaintext,
+marks the guest offline, and retains its slot/verifier. This restriction avoids
+making a request UUID a session takeover credential; credential-based reload
+and replacement-connection behavior remain #52.
+
+Join attempts are bounded before validation/lookup: ten per connection and sixty
+per peer source address in fixed sixty-second windows; the source table is capped
+at 10,000 and fails closed for new sources when full. Connection entries are
+released on disconnect, source budgets survive reconnect storms, and expired
+sources are reclaimed lazily. RoomModule's `ADMISSION_LIMITS` Symbol binding makes
+the defaults configurable. Peer addresses are used without trusting caller
+forwarded headers. These are pilot defaults to tune with evidence. No new public
+lifecycle command is added here; the internal phase check rejects closed rooms,
+while actual cancellation, expiry, and cleanup remain #53. `add-game-lobby`
+remains active until #52–#53 and their handoff/verification are complete.
+
 1. Add a live-game application boundary with RoomStore, QuizSnapshotReader, Clock, Scheduler, and CredentialIssuer ports as needed by tested behaviors. Use Symbol DI tokens and infrastructure adapters. Read an owned, validated quiz once when creating the room and deep-copy a versioned snapshot; do not re-read mutable quiz content during play.
 2. Use a single-process in-memory room registry and per-room serialized mutations. Guard room creation per owner across any awaited quiz lookup to enforce one active room. Generate six-digit PINs including leading zeros with a collision check; retry boundedly and fail gracefully if allocation fails. Never overwrite an active PIN.
 3. POST /rooms accepts quizId under account authentication and returns owner-safe room metadata and PIN. Use request IDs for retriable room creation; retain a bounded creation receipt while the room exists so a lost acknowledgement does not cause a second room. Invalid quiz returns 400; foreign quiz returns 404; another active room returns 409.

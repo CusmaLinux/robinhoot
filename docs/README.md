@@ -4,6 +4,9 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [Guest admission and roster contract](contracts/lobby-admission.md): Socket.IO host authentication, private guest sessions, safe rosters, limits, retries, and errors.
+- [Lobby admission architecture](architecture/lobby-admission.md): transport authorization, atomic membership, session boundaries, and admission sequence/state.
+
 - [Owned room creation contract](contracts/room-creation.md): safe metadata, immutable snapshots, host identity, unique PINs, retries, and errors.
 - [Room creation architecture](architecture/room-creation.md): ports, owner serialization, creation/retry sequence, and current state transitions.
 

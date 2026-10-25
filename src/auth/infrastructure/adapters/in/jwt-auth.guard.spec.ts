@@ -49,6 +49,7 @@ describe('JwtAuthGuard', () => {
     authHeader?: string,
   ): ExecutionContext {
     return {
+      getType: () => 'http',
       switchToHttp: () => ({
         getRequest: () => createMockRequest(path, authHeader),
       }),
@@ -101,6 +102,7 @@ describe('JwtAuthGuard', () => {
         'Bearer valid-token',
       );
       const context = {
+        getType: () => 'http',
         switchToHttp: () => ({
           getRequest: () => mockRequest,
         }),

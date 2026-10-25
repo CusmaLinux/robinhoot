@@ -1,3 +1,4 @@
+import type { Guest } from './lobby';
 export interface QuizSnapshot {
   readonly version: 1;
   readonly sourceQuizId: string;
@@ -15,12 +16,13 @@ export interface QuizSnapshot {
 export interface RoomMetadata {
   readonly roomId: string;
   readonly pin: string;
-  readonly phase: 'lobby';
+  readonly phase: 'lobby' | 'closed';
   readonly revision: number;
   readonly createdAt: string;
 }
 
 export interface Room extends RoomMetadata {
+  readonly guests: readonly Guest[];
   readonly host: { readonly ownerId: string };
   readonly creationRequestId: string;
   readonly quiz: QuizSnapshot;

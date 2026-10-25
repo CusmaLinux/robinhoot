@@ -54,6 +54,7 @@ export class InMemoryRoomStore implements RoomStorePort {
       roomId: randomUUID(),
       pin: this.allocatePin(),
       phase: 'lobby',
+      guests: Object.freeze([]),
       revision: 0,
       createdAt: new Date().toISOString(),
       host: Object.freeze({ ownerId: input.ownerId }),
@@ -64,6 +65,17 @@ export class InMemoryRoomStore implements RoomStorePort {
     this.owners.set(input.ownerId, room);
     this.pins.set(room.pin, room);
     return room;
+  }
+
+  mutate(roomId: string, change: (room: Room) => Room): Room {
+    const current = this.rooms.get(roomId);
+    if (!current) throw new Error('Unknown internal room');
+    // Synchronous mutations cannot interleave within this single-process adapter.
+    const next = Object.freeze(change(current));
+    this.rooms.set(roomId, next);
+    this.owners.set(next.host.ownerId, next);
+    this.pins.set(next.pin, next);
+    return next;
   }
 
   findById(roomId: string): Room | null {

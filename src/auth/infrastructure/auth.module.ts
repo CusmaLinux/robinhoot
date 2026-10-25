@@ -65,6 +65,7 @@ import { USER_REPOSITORY_PORT } from '../application/ports/out/user.repository.p
     },
   ],
   exports: [
+    VALIDATE_TOKEN_USE_CASE_PORT,
     AuthModule,
     JWT_SERVICE_PORT,
     BCRYPT_SERVICE_PORT,
