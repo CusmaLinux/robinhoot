@@ -11,6 +11,7 @@ export type QuizSummary = Omit<Quiz, 'questions'> & {
 };
 
 export interface QuizAuthoringUseCasePort {
+  delete(ownerId: string, id: string): Promise<boolean>;
   save(
     ownerId: string,
     id: string,

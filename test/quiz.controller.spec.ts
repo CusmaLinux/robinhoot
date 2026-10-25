@@ -95,6 +95,284 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
     };
   }
 
+  it('deletes an owned saved quiz from subsequent retrieval and listing', async () => {
+    const draft = await createDraft();
+    const retained = await createDraft();
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Delete me', questions: [question()] })
+      .expect(200);
+    const deleted = await request(server)
+      .delete(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(204);
+    expect(deleted.text).toBe('');
+    await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(404);
+    const list = await request(server)
+      .get('/quizzes')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(list.body).toEqual([expect.objectContaining({ id: retained.id })]);
+  });
+
+  it.each([['user'], ['admin']] as const)(
+    'denies foreign quiz deletion to a %s without mutation',
+    async (role) => {
+      const draft = await createDraft();
+      const saved = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send({ title: 'Private quiz', questions: [question()] })
+        .expect(200);
+      const other = await loginAs(`delete-${role}@example.com`, [role]);
+      const denied = await request(server)
+        .delete(`/quizzes/${draft.id}`)
+        .auth(other, { type: 'bearer' })
+        .expect(404);
+      expect(denied.body).toEqual({
+        statusCode: 404,
+        message: 'Quiz not found',
+        error: 'Not Found',
+      });
+      const read = await request(server)
+        .get(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .expect(200);
+      expect(read.body).toEqual(saved.body);
+    },
+  );
+
+  it('returns the same 404 when deleting a missing or already deleted quiz', async () => {
+    const draft = await createDraft();
+    await request(server)
+      .delete(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(204);
+    for (const id of [draft.id, randomUUID()]) {
+      const response = await request(server)
+        .delete(`/quizzes/${id}`)
+        .auth(token, { type: 'bearer' })
+        .expect(404);
+      expect(response.body).toEqual({
+        statusCode: 404,
+        message: 'Quiz not found',
+        error: 'Not Found',
+      });
+    }
+  });
+
+  it.each(['missing', 'invalid', 'expired', 'revoked'])(
+    'rejects deletion with %s credentials without mutation',
+    async (credential) => {
+      const draft = await createDraft();
+      const owner = await db
+        .selectFrom('users')
+        .selectAll()
+        .where('email', '=', 'quiz-owner@example.com')
+        .executeTakeFirstOrThrow();
+      let supplied = token;
+      if (credential === 'invalid') supplied = 'invalid';
+      if (credential === 'expired') {
+        supplied = new JwtService({ secret: process.env.JWT_SECRET }).sign(
+          {
+            sub: owner.id,
+            email: owner.email,
+            roles: owner.roles,
+            tokenVersion: owner.token_version,
+          },
+          { expiresIn: -1 },
+        );
+      }
+      if (credential === 'revoked') {
+        await request(server)
+          .post('/auth/logout')
+          .auth(token, { type: 'bearer' })
+          .expect(200);
+      }
+      const deletion = request(server).delete(`/quizzes/${draft.id}`);
+      if (credential !== 'missing') deletion.auth(supplied, { type: 'bearer' });
+      const denied = await deletion.expect(401);
+      expect(denied.body).toEqual({
+        statusCode: 401,
+        message: 'Unauthorized',
+        error: 'Unauthorized',
+      });
+      const login = await request(server)
+        .post('/auth/login')
+        .send({ email: owner.email, password: 'TestPassword123!' })
+        .expect(200);
+      const read = await request(server)
+        .get(`/quizzes/${draft.id}`)
+        .auth((login.body as { accessToken: string }).accessToken, {
+          type: 'bearer',
+        })
+        .expect(200);
+      expect(read.body).toMatchObject(draft);
+    },
+  );
+
+  it('rejects malformed deletion identifiers without changing the saved list', async () => {
+    await createDraft();
+    const before = await request(server)
+      .get('/quizzes')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    const response = await request(server)
+      .delete('/quizzes/not-a-uuid')
+      .auth(token, { type: 'bearer' })
+      .expect(400);
+    expect(response.body).toEqual({
+      statusCode: 400,
+      message: 'Validation failed (uuid is expected)',
+      error: 'Bad Request',
+    });
+    const after = await request(server)
+      .get('/quizzes')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(after.body).toEqual(before.body);
+  });
+
+  it('keeps deletion committed across independent application instances', async () => {
+    await rollbackTransaction(pool);
+    const email = `quiz-deletion-${randomUUID()}@example.com`;
+    let second: Awaited<ReturnType<typeof createTestApp>> | undefined;
+    try {
+      const durableToken = await loginAs(email);
+      const created = await request(server)
+        .post('/quizzes')
+        .auth(durableToken, { type: 'bearer' })
+        .send({ title: 'Durable deletion' })
+        .expect(201);
+      const path = `/quizzes/${(created.body as { id: string }).id}`;
+      second = await createTestApp({ validation: true });
+      const secondServer = second.app.getHttpServer() as Server;
+      await request(secondServer)
+        .get(path)
+        .auth(durableToken, { type: 'bearer' })
+        .expect(200);
+      await request(server)
+        .delete(path)
+        .auth(durableToken, { type: 'bearer' })
+        .expect(204);
+      await request(secondServer)
+        .get(path)
+        .auth(durableToken, { type: 'bearer' })
+        .expect(404);
+      const list = await request(secondServer)
+        .get('/quizzes')
+        .auth(durableToken, { type: 'bearer' })
+        .expect(200);
+      expect(list.body).toEqual([]);
+    } finally {
+      if (second) await destroyTestApp(second.app, second.db);
+      const owner = await db
+        .selectFrom('users')
+        .select('id')
+        .where('email', '=', email)
+        .executeTakeFirst();
+      if (owner) {
+        await db
+          .deleteFrom('quizzes')
+          .where('owner_id', '=', owner.id)
+          .execute();
+        await db.deleteFrom('users').where('id', '=', owner.id).execute();
+      }
+    }
+  });
+
+  it('publishes deletion status codes and examples matching HTTP responses', async () => {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().addBearerAuth().build(),
+    );
+    const deletion = document.paths['/quizzes/{id}'].delete!;
+    expect(deletion.security).toEqual([{ bearer: [] }]);
+    expect(deletion.responses['204']).toEqual({
+      description: 'Owned quiz deleted; empty response body',
+    });
+    const draft = await createDraft();
+    const path = `/quizzes/${draft.id}`;
+    const unauthorized = await request(server).delete(path).expect(401);
+    expect(unauthorized.body).toEqual(documentedExample(deletion, '401'));
+    const invalid = await request(server)
+      .delete('/quizzes/not-a-uuid')
+      .auth(token, { type: 'bearer' })
+      .expect(400);
+    expect(invalid.body).toEqual(documentedExample(deletion, '400'));
+    await request(server)
+      .delete(path)
+      .auth(token, { type: 'bearer' })
+      .expect(204);
+    const missing = await request(server)
+      .delete(path)
+      .auth(token, { type: 'bearer' })
+      .expect(404);
+    expect(missing.body).toEqual(documentedExample(deletion, '404'));
+  });
+
+  it('completes the two-question authoring walkthrough with a private second account boundary', async () => {
+    const draft = await createDraft();
+    const path = `/quizzes/${draft.id}`;
+    const first = question('Which cell contains a nucleus?');
+    const second = question('Which cell is eukaryotic?');
+    const saved = await request(server)
+      .put(path)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Biology', questions: [first, second] })
+      .expect(200);
+    expect(saved.body).toMatchObject({ hostable: true, errors: [] });
+    const edited = {
+      ...first,
+      prompt: 'Which cell has a membrane-bound nucleus?',
+    };
+    const reordered = await request(server)
+      .put(path)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Biology revision', questions: [second, edited] })
+      .expect(200);
+    expect(reordered.body).toMatchObject({
+      questions: [second, edited],
+      hostable: true,
+      errors: [],
+    });
+    const other = await loginAs('walkthrough-other@example.com');
+    const otherList = await request(server)
+      .get('/quizzes')
+      .auth(other, { type: 'bearer' })
+      .expect(200);
+    expect(otherList.body).toEqual([]);
+    await request(server).get(path).auth(other, { type: 'bearer' }).expect(404);
+    await request(server)
+      .put(path)
+      .auth(other, { type: 'bearer' })
+      .send({ title: 'Foreign edit', questions: [] })
+      .expect(404);
+    await request(server)
+      .delete(path)
+      .auth(other, { type: 'bearer' })
+      .expect(404);
+    const reopened = await request(server)
+      .get(path)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(reopened.body).toEqual(reordered.body);
+    await request(server)
+      .delete(path)
+      .auth(token, { type: 'bearer' })
+      .expect(204);
+    await request(server).get(path).auth(token, { type: 'bearer' }).expect(404);
+    const list = await request(server)
+      .get('/quizzes')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(list.body).toEqual([]);
+  });
+
   it('saves title and stable question/option identities for a subsequent read', async () => {
     const draft = await createDraft();
     const input = { title: ' Biology ', questions: [question()] };

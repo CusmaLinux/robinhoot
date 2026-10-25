@@ -2,7 +2,10 @@ import {
   Body,
   BadRequestException,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Inject,
   NotFoundException,
   Param,
@@ -20,6 +23,7 @@ import {
   ApiCreatedResponse,
   ApiExtraModels,
   ApiNotFoundResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -58,6 +62,34 @@ export class QuizController {
     @Inject(QUIZ_AUTHORING_USE_CASE_PORT)
     private readonly authoring: QuizAuthoringUseCasePort,
   ) {}
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete an owned saved quiz',
+    description:
+      'Deletes only the source quiz. Independent game/report snapshots belong to their own lifecycle. Admins have no cross-owner bypass.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiNoContentResponse({
+    description: 'Owned quiz deleted; empty response body',
+  })
+  @ApiNotFoundResponse({
+    description: 'Missing or foreign quiz (also returned on repeated deletion)',
+    schema: { example: QUIZ_NOT_FOUND_EXAMPLE },
+  })
+  @ApiBadRequestResponse({
+    description: 'Malformed quiz UUID',
+    schema: { example: QUIZ_BAD_ID_EXAMPLE },
+  })
+  async delete(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<void> {
+    if (!(await this.authoring.delete(user.userId, id))) {
+      throw new NotFoundException('Quiz not found');
+    }
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create a private empty quiz draft' })

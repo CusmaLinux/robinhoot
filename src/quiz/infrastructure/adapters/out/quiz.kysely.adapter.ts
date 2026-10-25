@@ -9,6 +9,15 @@ import type { QuizRepositoryPort } from '../../../application/ports/out/quiz.rep
 export class QuizKyselyAdapter implements QuizRepositoryPort {
   constructor(@Inject(KYSELY_TOKEN) private readonly db: Kysely<Database>) {}
 
+  async deleteOwned(ownerId: string, id: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom('quizzes')
+      .where('owner_id', '=', ownerId)
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
+    return result.numDeletedRows > 0n;
+  }
+
   async saveOwned(
     ownerId: string,
     id: string,
