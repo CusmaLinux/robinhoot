@@ -4,11 +4,12 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
-- [Private quiz draft API contract](contracts/quiz-drafts.md): authenticated create/list/read/save, question ordering, stable IDs, ownership, readiness errors, and test database instructions.
+- [Private quiz draft API contract](contracts/quiz-drafts.md): authenticated create/list/read/save/delete, question ordering, stable IDs, ownership, readiness errors, and test database instructions.
+- [Two-account authoring walkthrough](contracts/quiz-authoring-walkthrough.md): two-question creation, editing, reordering, access denial, and deletion for API/UI handoff.
 - [Quiz draft architecture](architecture/quiz-drafts.md): verified components, request sequence, and draft state.
 - [Authentication API contract](contracts/authentication.md): current requests, responses, validation, expiry, revocation, and role semantics.
 - [Authentication baseline reconciliation](authentication-baseline.md): source/test evidence, differences from archived notes, and verification limits.
-- [Main behavioral specifications](../openspec/specs/): reconciled current authentication capabilities.
+- [Main behavioral specifications](../openspec/specs/): current authentication and private quiz authoring capabilities.
 
 ## MVP planning and delivery
 

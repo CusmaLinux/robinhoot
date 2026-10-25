@@ -16,6 +16,10 @@ export class QuizAuthoringService implements QuizAuthoringUseCasePort {
     private readonly repository: QuizRepositoryPort,
   ) {}
 
+  delete(ownerId: string, id: string): Promise<boolean> {
+    return this.repository.deleteOwned(ownerId, id);
+  }
+
   async save(
     ownerId: string,
     id: string,

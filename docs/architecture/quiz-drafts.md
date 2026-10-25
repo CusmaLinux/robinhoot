@@ -1,6 +1,6 @@
 # Private draft authoring architecture
 
-Implemented scope: [#47](https://github.com/CusmaLinux/robinhoot/issues/47) and [#48](https://github.com/CusmaLinux/robinhoot/issues/48). See the [public contract](../contracts/quiz-drafts.md). Deletion and final authoring acceptance remain in #49.
+Implemented scope: [#47](https://github.com/CusmaLinux/robinhoot/issues/47), [#48](https://github.com/CusmaLinux/robinhoot/issues/48), and [#49](https://github.com/CusmaLinux/robinhoot/issues/49). See the [public contract](../contracts/quiz-drafts.md) and [acceptance walkthrough](../contracts/quiz-authoring-walkthrough.md).
 
 ```mermaid
 flowchart LR
@@ -14,7 +14,7 @@ flowchart LR
     Adapter --> DB[(PostgreSQL quizzes)]
 ```
 
-The composition root binds both Symbol ports in `QuizModule`, imported by `AppModule`. Domain types, identity checks, and readiness have no NestJS or Kysely imports. The application receives verified owner IDs and content through its inbound port, validates identity consistency, and calls its outbound repository port. Request objects and database rows stay in adapters. The outbound adapter maps rows explicitly to exclude owner IDs. Every read/list/update query includes the verified owner predicate; admins have no ownership bypass.
+The composition root binds both Symbol ports in `QuizModule`, imported by `AppModule`. Domain types, identity checks, and readiness have no NestJS or Kysely imports. The application receives verified owner IDs and content through its inbound port, validates identity consistency, and calls its outbound repository port. Request objects and database rows stay in adapters. The outbound adapter maps rows explicitly to exclude owner IDs. Every read/list/update/delete query includes the verified owner predicate; admins have no ownership bypass.
 
 DTOs check shape, scalar types, bounded collections/text, and object elements before use-case dispatch. Duplicate UUIDs and dangling correct-option references produce a domain structure error translated to HTTP 400 by the controller. Incomplete text, option counts, selections, and durations pass save validation and return readiness errors. No write occurs on structural errors.
 
@@ -57,6 +57,19 @@ sequenceDiagram
     App->>DB: SELECT by ownerId AND id
     DB-->>App: Saved content in array order, or no match
     App-->>UI: 200 with derived readiness, or 404
+    UI->>Auth: DELETE /quizzes/id + bearer token
+    Auth->>HTTP: Verified account identity
+    HTTP->>HTTP: Validate quiz UUID
+    HTTP->>App: delete(ownerId, id)
+    App->>DB: Single DELETE by ownerId AND id
+    DB-->>App: Affected row count
+    alt Owned quiz deleted
+      App-->>HTTP: true
+      HTTP-->>UI: 204, empty body
+    else Missing or foreign quiz
+      App-->>HTTP: false
+      HTTP-->>UI: 404 Quiz not found, no mutation
+    end
 ```
 
 ```mermaid
@@ -66,10 +79,12 @@ stateDiagram-v2
     SavedIncompleteDraft --> SavedHostableQuiz: save complete content
     SavedHostableQuiz --> SavedHostableQuiz: edit or reorder complete content
     SavedHostableQuiz --> SavedIncompleteDraft: save incomplete content
+    SavedIncompleteDraft --> [*]: owner deletes saved quiz
+    SavedHostableQuiz --> [*]: owner deletes saved quiz
     note right of SavedIncompleteDraft
       Both states are saved private drafts.
       Readiness is derived, not persisted.
-      Invalid structure or unauthorized edits
+      Invalid structure or unauthorized mutations
       leave the saved state unchanged.
     end note
 ```
@@ -77,5 +92,9 @@ stateDiagram-v2
 The aggregate is one row: generated quiz UUID, owner UUID referencing `users`, title, ordered JSONB questions, and UTC creation/update timestamps. Stable client UUIDs identify questions and options inside the aggregate; correct-option UUIDs reference options inside their question. Saving replaces the content atomically and preserves creation time, with `clock_timestamp()` supplying update time. Arrays explicitly store order. Concurrent saves have last-write-wins semantics. This slice adds no schema migration or in-memory cache.
 
 Integration tests exercise save/retrieve, two-question and option reordering, readiness, ownership denial for both user/admin, and unchanged content/timestamps on rejection. An independent application/database pool reopens a committed edited aggregate. No production database is used.
+
+Deletion follows the same inbound Symbol port → application service → outbound Symbol port → Kysely adapter path. Its boolean result maps affected rows to HTTP 204/404 at the controller. A single owner-scoped DELETE removes only the source aggregate; no preflight read, game/report imports, additional module bindings, or cascading foreign keys are introduced. The dedicated database suite verifies committed deletion through an independent app/pool, owner-list removal, retained other drafts, user/admin denial, and invalid credentials/UUIDs.
+
+Live rooms and reports are future independent snapshot owners. Their designs require copying quiz content at room creation and persisting report snapshots without a cascading source-quiz foreign key. Source deletion must never invoke their lifecycle or delete their snapshots. Concrete live/report retention regressions belong to those implementations; this stage reviews the current schema and dependency direction rather than fabricating future storage.
 
 Kysely's `FileMigrationProvider` loads migration files by directory at runtime. `.fallowrc.json` declares that directory as an entry point so static analysis recognizes these database lifecycle exports without artificial imports. The CI audit installs dependencies before analysis.

@@ -108,11 +108,11 @@ The drafted capabilities are `quiz-authoring`, `game-lobby`, `live-gameplay`, `g
 
 Published delivery tracking: [MVP API epic #44](https://github.com/CusmaLinux/robinhoot/issues/44) and the [issue-to-change/task map](mvp-issue-map.md). Planning publication and authentication baseline reconciliation are tracked in [#46](https://github.com/CusmaLinux/robinhoot/issues/46); all feature issues depend on that baseline through their blocker chains.
 
-Only baseline tasks 1.1–1.3 in `add-quiz-authoring` are complete for issue #46; every feature task remains pending. OpenSpec artifact readiness means planning documents exist, not that features are implemented. Follow the order below. Cross-change prerequisites are documented review gates, not dependencies enforced by the CLI.
+Private quiz authoring tasks 1.1–4.3 are complete through issues #46–#49, with the full change archived and its [main specification](../openspec/specs/quiz-authoring/spec.md) published. The [HTTP walkthrough](contracts/quiz-authoring-walkthrough.md) records its acceptance and contract handoff. Lobby and subsequent feature tasks remain pending. OpenSpec artifact readiness means planning documents exist, not that features are implemented. Follow the order below. Cross-change prerequisites are documented review gates, not dependencies enforced by the CLI.
 
 | Change | Proposal | Behavioral specs | Design | Tasks |
 | --- | --- | --- | --- | --- |
-| 1. Quiz authoring | [Proposal](../openspec/changes/add-quiz-authoring/proposal.md) | [Authoring](../openspec/changes/add-quiz-authoring/specs/quiz-authoring/spec.md) | [Design](../openspec/changes/add-quiz-authoring/design.md) | [Tasks](../openspec/changes/add-quiz-authoring/tasks.md) |
+| 1. Quiz authoring | [Proposal](../openspec/changes/archive/2026-10-24-add-quiz-authoring/proposal.md) | [Authoring](../openspec/changes/archive/2026-10-24-add-quiz-authoring/specs/quiz-authoring/spec.md) | [Design](../openspec/changes/archive/2026-10-24-add-quiz-authoring/design.md) | [Tasks](../openspec/changes/archive/2026-10-24-add-quiz-authoring/tasks.md) |
 | 2. Lobby | [Proposal](../openspec/changes/add-game-lobby/proposal.md) | [Lobby](../openspec/changes/add-game-lobby/specs/game-lobby/spec.md) | [Design](../openspec/changes/add-game-lobby/design.md) | [Tasks](../openspec/changes/add-game-lobby/tasks.md) |
 | 3. Live round | [Proposal](../openspec/changes/play-live-question/proposal.md) | [Gameplay](../openspec/changes/play-live-question/specs/live-gameplay/spec.md) | [Design](../openspec/changes/play-live-question/design.md) | [Tasks](../openspec/changes/play-live-question/tasks.md) |
 | 4. Full game and results | [Proposal](../openspec/changes/finish-game-with-results/proposal.md) | [Progression](../openspec/changes/finish-game-with-results/specs/game-progression/spec.md), [results](../openspec/changes/finish-game-with-results/specs/game-results/spec.md) | [Design](../openspec/changes/finish-game-with-results/design.md) | [Tasks](../openspec/changes/finish-game-with-results/tasks.md) |
@@ -135,8 +135,8 @@ For every question, persist its snapshot and counts for eligible players, correc
 4. Validate the artifacts and inspect status:
 
    ```bash
-   pnpm exec openspec status --change add-quiz-authoring --json
-   pnpm exec openspec validate add-quiz-authoring --strict
+   pnpm exec openspec status --change add-game-lobby --json
+   pnpm exec openspec validate add-game-lobby --strict
    ```
 
 5. Request `$openspec-apply-change <change-name>`, optionally limiting the instruction to a named task group. Follow the configured one-test/one-behavior TDD loop.
@@ -163,7 +163,9 @@ The system SHALL reject answers received at or after the active question's deadl
 
 Other valuable scenarios: editing another user's quiz; starting an invalid quiz; joining a full room; a non-owner sending a host command; retrying an accepted answer after losing its acknowledgement; reconnecting after reveal; finalization when persistence fails; reloading a completed report.
 
-## Suggested first review prompt
+## Historical first review prompt
+
+The authoring review below is retained as the original planning example. Authoring is now archived; review `add-game-lobby` against the main authoring spec before starting the next stage.
 
 ```text
 $openspec-explore add-quiz-authoring

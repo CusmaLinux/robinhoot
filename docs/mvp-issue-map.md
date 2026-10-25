@@ -8,7 +8,9 @@ AFK means the issue follows the agreed contract once blockers are complete; norm
 
 ## 1. Private quiz authoring
 
-OpenSpec: [proposal](../openspec/changes/add-quiz-authoring/proposal.md), [design](../openspec/changes/add-quiz-authoring/design.md), [tasks](../openspec/changes/add-quiz-authoring/tasks.md).
+API implementation and verification are complete through #49; the full change is archived and its requirements are published in the [main authoring spec](../openspec/specs/quiz-authoring/spec.md). See the [acceptance walkthrough](contracts/quiz-authoring-walkthrough.md). Normal PR review remains required.
+
+OpenSpec: [proposal](../openspec/changes/archive/2026-10-24-add-quiz-authoring/proposal.md), [design](../openspec/changes/archive/2026-10-24-add-quiz-authoring/design.md), [tasks](../openspec/changes/archive/2026-10-24-add-quiz-authoring/tasks.md).
 
 | Issue | Type | Task coverage | Blocked by |
 | --- | --- | --- | --- |

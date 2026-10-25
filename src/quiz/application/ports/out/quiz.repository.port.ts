@@ -3,6 +3,7 @@ import type { Quiz, QuizContent } from '../../../domain/quiz';
 export const QUIZ_REPOSITORY_PORT = Symbol('QUIZ_REPOSITORY_PORT');
 
 export interface QuizRepositoryPort {
+  deleteOwned(ownerId: string, id: string): Promise<boolean>;
   saveOwned(
     ownerId: string,
     id: string,
