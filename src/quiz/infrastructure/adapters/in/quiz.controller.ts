@@ -8,7 +8,10 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
 } from '@nestjs/common';
+import { InvalidQuizStructureError } from '../../../domain/quiz';
+import { SaveQuizDto } from './save-quiz.dto';
 import { CreateQuizDto } from './create-quiz.dto';
 import {
   ApiBadRequestResponse,
@@ -27,6 +30,10 @@ import {
 import { QuizDetailDto, QuizSummaryDto } from './quiz-response.dto';
 import {
   EMPTY_DRAFT_EXAMPLE,
+  SAVE_QUIZ_EXAMPLE,
+  HOSTABLE_QUIZ_EXAMPLE,
+  INCOMPLETE_SAVE_EXAMPLE,
+  INCOMPLETE_QUIZ_EXAMPLE,
   QUIZ_LIST_EXAMPLE,
   QUIZ_UNAUTHORIZED_EXAMPLE,
   QUIZ_NOT_FOUND_EXAMPLE,
@@ -40,7 +47,7 @@ import type { QuizAuthoringUseCasePort } from '../../../application/ports/in/qui
 
 @ApiTags('quizzes')
 @ApiBearerAuth()
-@ApiExtraModels(CreateQuizDto, QuizDetailDto, QuizSummaryDto)
+@ApiExtraModels(CreateQuizDto, SaveQuizDto, QuizDetailDto, QuizSummaryDto)
 @ApiUnauthorizedResponse({
   description: 'Missing, invalid, expired, or revoked account credential',
   schema: { example: QUIZ_UNAUTHORIZED_EXAMPLE },
@@ -77,6 +84,64 @@ export class QuizController {
       throw new BadRequestException('Draft body must be a JSON object');
     }
     return this.authoring.create(user.userId, input?.title ?? '');
+  }
+
+  @Put(':id')
+  @ApiOperation({
+    summary:
+      'Atomically replace an owned draft, preserving supplied IDs and array order',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiBody({
+    type: SaveQuizDto,
+    examples: {
+      hostable: { value: SAVE_QUIZ_EXAMPLE },
+      incomplete: { value: INCOMPLETE_SAVE_EXAMPLE },
+      empty: { value: { title: '', questions: [] } },
+    },
+  })
+  @ApiOkResponse({
+    description:
+      'Saved aggregate with derived readiness, including incomplete drafts',
+    content: {
+      'application/json': {
+        schema: { $ref: getSchemaPath(QuizDetailDto) },
+        examples: {
+          hostable: { value: HOSTABLE_QUIZ_EXAMPLE },
+          incomplete: { value: INCOMPLETE_QUIZ_EXAMPLE },
+          empty: { value: EMPTY_DRAFT_EXAMPLE },
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Malformed structure, duplicate IDs, invalid option references, unknown fields or malformed path UUID; no content is changed',
+    schema: { example: QUIZ_BAD_REQUEST_EXAMPLE },
+  })
+  @ApiNotFoundResponse({
+    description:
+      'Missing quiz or quiz owned by another account, including admins',
+    schema: { example: QUIZ_NOT_FOUND_EXAMPLE },
+  })
+  async save(
+    @CurrentUser() user: CurrentUserData,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() input: SaveQuizDto,
+  ) {
+    if (!input || Array.isArray(input)) {
+      throw new BadRequestException('Draft body must be a JSON object');
+    }
+    try {
+      const quiz = await this.authoring.save(user.userId, id, input);
+      if (!quiz) throw new NotFoundException('Quiz not found');
+      return quiz;
+    } catch (error) {
+      if (error instanceof InvalidQuizStructureError) {
+        throw new BadRequestException([error.message]);
+      }
+      throw error;
+    }
   }
 
   @Get(':id')

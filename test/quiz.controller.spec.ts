@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { randomUUID } from 'crypto';
 import { INestApplication } from '@nestjs/common';
 import { Server } from 'net';
 import { Kysely, sql } from 'kysely';
@@ -64,6 +65,594 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
   });
   afterAll(async () => {
     if (app) await destroyTestApp(app, db);
+  });
+
+  function question(prompt = 'Which cell contains a nucleus?') {
+    const options = ['Animal', 'Bacterium', 'Virus', 'None'].map((text) => ({
+      id: randomUUID(),
+      text,
+    }));
+    return {
+      id: randomUUID(),
+      type: 'multiple-choice',
+      prompt,
+      options,
+      correctOptionIds: [options[0].id],
+      durationSeconds: 20,
+    };
+  }
+
+  async function createDraft() {
+    const response = await request(server)
+      .post('/quizzes')
+      .auth(token, { type: 'bearer' })
+      .send({})
+      .expect(201);
+    return response.body as {
+      id: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+  }
+
+  it('saves title and stable question/option identities for a subsequent read', async () => {
+    const draft = await createDraft();
+    const input = { title: ' Biology ', questions: [question()] };
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send(input)
+      .expect(200);
+    expect(saved.body).toMatchObject({
+      ...input,
+      id: draft.id,
+      createdAt: draft.createdAt,
+    });
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toEqual(saved.body);
+  });
+
+  it('saves incomplete content with field-specific readiness errors', async () => {
+    const draft = await createDraft();
+    const input = {
+      title: '  ',
+      questions: [
+        {
+          ...question(),
+          prompt: '',
+          options: [],
+          correctOptionIds: [],
+          durationSeconds: null,
+        },
+      ],
+    };
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send(input)
+      .expect(200);
+    expect(saved.body).toMatchObject({
+      ...input,
+      hostable: false,
+      errors: [
+        { field: 'title', code: 'REQUIRED', message: 'Title is required' },
+        {
+          field: 'questions[0].prompt',
+          code: 'REQUIRED',
+          message: 'Prompt is required',
+        },
+        {
+          field: 'questions[0].options',
+          code: 'OPTION_COUNT',
+          message: 'Question must contain four options',
+        },
+        {
+          field: 'questions[0].correctOptionIds',
+          code: 'CORRECT_OPTION_COUNT',
+          message: 'Question must have exactly one correct option',
+        },
+        {
+          field: 'questions[0].durationSeconds',
+          code: 'DURATION',
+          message: 'Duration must be 10, 20, 30, or 60 seconds',
+        },
+      ],
+    });
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toEqual(saved.body);
+  });
+
+  it('reorders two questions and their options without changing identities or correct mappings', async () => {
+    const draft = await createDraft();
+    const a = question('Question A');
+    const b = question('Question B');
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Two questions', questions: [a, b] })
+      .expect(200);
+    const input = {
+      title: 'Reordered',
+      questions: [
+        {
+          ...b,
+          prompt: 'Edited B',
+          options: [...b.options].reverse(),
+          durationSeconds: 60,
+        },
+        a,
+      ],
+    };
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send(input)
+      .expect(200);
+    expect(saved.body).toMatchObject({ ...input, hostable: true, errors: [] });
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toEqual(saved.body);
+    const list = await request(server)
+      .get('/quizzes')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(list.body).toEqual([
+      {
+        id: draft.id,
+        title: input.title,
+        questionCount: 2,
+        createdAt: draft.createdAt,
+        updatedAt: (saved.body as { updatedAt: string }).updatedAt,
+        hostable: true,
+      },
+    ]);
+  });
+
+  it('rejects duplicate question identities without partially replacing saved content', async () => {
+    const draft = await createDraft();
+    const original = { title: 'Original', questions: [question()] };
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send(original)
+      .expect(200);
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({
+        title: 'Changed',
+        questions: [original.questions[0], original.questions[0]],
+      })
+      .expect(400);
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toEqual(saved.body);
+  });
+
+  it('rejects duplicate option identities without changing the draft', async () => {
+    const draft = await createDraft();
+    const q = question();
+    q.options[1].id = q.options[0].id;
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Changed', questions: [q] })
+      .expect(400);
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toMatchObject({
+      title: '',
+      questions: [],
+      updatedAt: draft.updatedAt,
+    });
+  });
+
+  it('rejects a correct answer referring to an option outside its question', async () => {
+    const draft = await createDraft();
+    const q = question();
+    q.correctOptionIds = [randomUUID()];
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Changed', questions: [q] })
+      .expect(400);
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toMatchObject({
+      title: '',
+      questions: [],
+      updatedAt: draft.updatedAt,
+    });
+  });
+
+  it('rejects repeated correct-option IDs as malformed structure', async () => {
+    const draft = await createDraft();
+    const q = question();
+    q.correctOptionIds.push(q.correctOptionIds[0]);
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Changed', questions: [q] })
+      .expect(400);
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toMatchObject({
+      title: '',
+      questions: [],
+      updatedAt: draft.updatedAt,
+    });
+  });
+
+  it.each([['user'], ['admin']] as const)(
+    'denies foreign edits and reorders to a %s without changing content',
+    async (role) => {
+      const draft = await createDraft();
+      const input = {
+        title: 'Owner quiz',
+        questions: [question('A'), question('B')],
+      };
+      const saved = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send(input)
+        .expect(200);
+      const other = await loginAs(`edit-${role}@example.com`, [role]);
+      const denied = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(other, { type: 'bearer' })
+        .send({ title: 'Stolen', questions: [...input.questions].reverse() })
+        .expect(404);
+      expect(denied.body).toEqual({
+        statusCode: 404,
+        message: 'Quiz not found',
+        error: 'Not Found',
+      });
+      const read = await request(server)
+        .get(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .expect(200);
+      expect(read.body).toEqual(saved.body);
+    },
+  );
+
+  it.each(['missing', 'invalid', 'expired', 'revoked'])(
+    'rejects %s credentials on save without changing content',
+    async (credential) => {
+      const draft = await createDraft();
+      let saveToken = token;
+      if (credential === 'invalid') saveToken = 'invalid';
+      if (credential === 'expired') {
+        const claims = new JwtService().decode<Record<string, unknown>>(token);
+        delete claims.iat;
+        delete claims.exp;
+        saveToken = new JwtService({ secret: process.env.JWT_SECRET }).sign(
+          claims,
+          { expiresIn: -1 },
+        );
+      }
+      if (credential === 'revoked') {
+        await request(server)
+          .post('/auth/logout')
+          .auth(token, { type: 'bearer' })
+          .expect(200);
+      }
+      const save = request(server).put(`/quizzes/${draft.id}`);
+      if (credential !== 'missing') save.auth(saveToken, { type: 'bearer' });
+      await save
+        .send({ title: 'Changed', questions: [question()] })
+        .expect(401);
+      if (credential === 'revoked') {
+        const login = await request(server)
+          .post('/auth/login')
+          .send({
+            email: 'quiz-owner@example.com',
+            password: 'TestPassword123!',
+          })
+          .expect(200);
+        token = (login.body as { accessToken: string }).accessToken;
+      }
+      const read = await request(server)
+        .get(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .expect(200);
+      expect(read.body).toMatchObject({
+        title: '',
+        questions: [],
+        updatedAt: draft.updatedAt,
+      });
+    },
+  );
+
+  it('uses the same missing-resource response on save and validates path UUIDs', async () => {
+    const input = { title: 'Missing', questions: [] };
+    const missing = await request(server)
+      .put('/quizzes/00000000-0000-4000-8000-000000000000')
+      .auth(token, { type: 'bearer' })
+      .send(input)
+      .expect(404);
+    expect(missing.body).toEqual({
+      statusCode: 404,
+      message: 'Quiz not found',
+      error: 'Not Found',
+    });
+    await request(server)
+      .put('/quizzes/not-a-uuid')
+      .auth(token, { type: 'bearer' })
+      .send(input)
+      .expect(400);
+  });
+
+  const invalidSaves: [string, () => unknown][] = [
+    ['missing title', () => ({ questions: [] })],
+    ['null title', () => ({ title: null, questions: [] })],
+    ['long title', () => ({ title: 'x'.repeat(201), questions: [] })],
+    ['missing questions', () => ({ title: 'Changed' })],
+    ['non-array questions', () => ({ title: 'Changed', questions: {} })],
+    ['null questions', () => ({ title: 'Changed', questions: null })],
+    [
+      'too many questions',
+      () => ({
+        title: 'Changed',
+        questions: Array.from({ length: 21 }, () => question()),
+      }),
+    ],
+    ['array body', () => []],
+    ['array of bodies', () => [{ title: 'Changed', questions: [] }]],
+    [
+      'ownership injection',
+      () => ({ title: 'Changed', questions: [], ownerId: randomUUID() }),
+    ],
+    [
+      'derived field injection',
+      () => ({ title: 'Changed', questions: [], hostable: true }),
+    ],
+    ...(
+      [
+        ['null question', () => null],
+        ['nested array question', () => [question()]],
+        ['invalid question UUID', () => ({ ...question(), id: 'bad' })],
+        [
+          'unsupported question type',
+          () => ({ ...question(), type: 'true-false' }),
+        ],
+        [
+          'missing prompt',
+          () => {
+            const q: Partial<ReturnType<typeof question>> = question();
+            delete q.prompt;
+            return q;
+          },
+        ],
+        ['long prompt', () => ({ ...question(), prompt: 'x'.repeat(2001) })],
+        ['null options', () => ({ ...question(), options: null })],
+        [
+          'too many options',
+          () => ({
+            ...question(),
+            options: Array.from({ length: 5 }, () => ({
+              id: randomUUID(),
+              text: 'x',
+            })),
+          }),
+        ],
+        ['null option', () => ({ ...question(), options: [null] })],
+        [
+          'nested array option',
+          () => ({ ...question(), options: [[question().options[0]]] }),
+        ],
+        [
+          'invalid option UUID',
+          () => ({ ...question(), options: [{ id: 'bad', text: 'x' }] }),
+        ],
+        [
+          'long option text',
+          () => ({
+            ...question(),
+            options: [{ id: randomUUID(), text: 'x'.repeat(1001) }],
+          }),
+        ],
+        [
+          'unknown option property',
+          () => ({
+            ...question(),
+            options: [{ id: randomUUID(), text: 'x', isCorrect: true }],
+          }),
+        ],
+        [
+          'non-array correct mappings',
+          () => ({ ...question(), correctOptionIds: 'bad' }),
+        ],
+        [
+          'missing correct mappings',
+          () => {
+            const q: Partial<ReturnType<typeof question>> = question();
+            delete q.correctOptionIds;
+            return q;
+          },
+        ],
+        [
+          'invalid correct UUID',
+          () => ({ ...question(), correctOptionIds: ['bad'] }),
+        ],
+        [
+          'missing duration',
+          () => {
+            const q: Partial<ReturnType<typeof question>> = question();
+            delete q.durationSeconds;
+            return q;
+          },
+        ],
+        ['string duration', () => ({ ...question(), durationSeconds: '20' })],
+        [
+          'fractional duration',
+          () => ({ ...question(), durationSeconds: 10.5 }),
+        ],
+        ['negative duration', () => ({ ...question(), durationSeconds: -1 })],
+        [
+          'unbounded duration',
+          () => ({ ...question(), durationSeconds: 3601 }),
+        ],
+        [
+          'unknown question property',
+          () => ({ ...question(), ownerId: randomUUID() }),
+        ],
+      ] as [string, () => unknown][]
+    ).map(
+      ([name, build]) =>
+        [name, () => ({ title: 'Changed', questions: [build()] })] as [
+          string,
+          () => unknown,
+        ],
+    ),
+  ];
+
+  it.each(invalidSaves)(
+    'rejects malformed save: %s and preserves the saved aggregate',
+    async (_name, build) => {
+      const draft = await createDraft();
+      const saved = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send({ title: 'Original', questions: [question()] })
+        .expect(200);
+      await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send(build() as object)
+        .expect(400);
+      const read = await request(server)
+        .get(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .expect(200);
+      expect(read.body).toEqual(saved.body);
+    },
+  );
+
+  it('allows a full replacement to remove questions and save an empty draft', async () => {
+    const draft = await createDraft();
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Ready', questions: [question()] })
+      .expect(200);
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: '', questions: [] })
+      .expect(200);
+    expect(saved.body).toMatchObject({
+      title: '',
+      questions: [],
+      hostable: false,
+    });
+    const read = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(read.body).toEqual(saved.body);
+  });
+
+  it.each(['hostable', 'incomplete', 'empty'])(
+    'publishes a %s save example matching save and read',
+    async (name) => {
+      const document = SwaggerModule.createDocument(
+        app,
+        new DocumentBuilder().addBearerAuth().build(),
+      );
+      const operation = document.paths['/quizzes/{id}'].put!;
+      expect(operation.security).toEqual([{ bearer: [] }]);
+      const requestBody = operation.requestBody!;
+      if (!('content' in requestBody))
+        throw new Error('Missing documented body');
+      const input = requestBody.content['application/json'].examples![name];
+      if (!('value' in input)) throw new Error('Missing request example');
+      const exampleInput = input.value as Record<string, unknown>;
+      const response = operation.responses['200'];
+      if (!('content' in response)) throw new Error('Missing response content');
+      const example = response.content!['application/json'].examples![name];
+      if (!('value' in example)) throw new Error('Missing response example');
+      const draft = await createDraft();
+      const saved = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send(exampleInput)
+        .expect(200);
+      const body = saved.body as {
+        id: string;
+        createdAt: string;
+        updatedAt: string;
+      };
+      expect(saved.body).toEqual({
+        ...example.value,
+        id: body.id,
+        createdAt: body.createdAt,
+        updatedAt: body.updatedAt,
+      });
+      const read = await request(server)
+        .get(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .expect(200);
+      expect(read.body).toEqual(saved.body);
+      expect(document.components?.schemas?.QuizDetailDto).toMatchObject({
+        properties: {
+          questions: {
+            type: 'array',
+            maxItems: 20,
+            items: { $ref: '#/components/schemas/QuizQuestionDto' },
+          },
+        },
+      });
+      expect(document.components?.schemas?.SaveQuizDto).toMatchObject({
+        required: ['title', 'questions'],
+      });
+      const invalid = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send({ ...exampleInput, ownerId: 'forged' })
+        .expect(400);
+      expect(invalid.body).toEqual(documentedExample(operation, '400'));
+      const denied = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .send(exampleInput)
+        .expect(401);
+      expect(denied.body).toEqual(documentedExample(operation, '401'));
+      const missing = await request(server)
+        .put('/quizzes/00000000-0000-4000-8000-000000000000')
+        .auth(token, { type: 'bearer' })
+        .send(exampleInput)
+        .expect(404);
+      expect(missing.body).toEqual(documentedExample(operation, '404'));
+    },
+  );
+
+  it('saves twenty hostable questions at the structural boundary', async () => {
+    const draft = await createDraft();
+    const input = {
+      title: 'Twenty',
+      questions: Array.from({ length: 20 }, () => question()),
+    };
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send(input)
+      .expect(200);
+    expect(saved.body).toMatchObject({ ...input, hostable: true, errors: [] });
   });
 
   it('creates an empty draft with field-specific readiness errors', async () => {
@@ -450,7 +1039,7 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
     expect(invalidId.body).toEqual(documentedExample(read, '400'));
   });
 
-  it('reopens a committed draft from an independent application instance', async () => {
+  it('reopens a committed edited quiz from an independent application instance', async () => {
     await rollbackTransaction(pool);
     const email = 'quiz-durable@example.com';
     let second: Awaited<ReturnType<typeof createTestApp>> | undefined;
@@ -461,12 +1050,20 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
         .auth(durableToken, { type: 'bearer' })
         .send({ title: 'Durable draft' })
         .expect(201);
+      const saved = await request(server)
+        .put(`/quizzes/${(created.body as { id: string }).id}`)
+        .auth(durableToken, { type: 'bearer' })
+        .send({
+          title: 'Durable edited quiz',
+          questions: [question('Committed question')],
+        })
+        .expect(200);
       second = await createTestApp({ validation: true });
       const read = await request(second.app.getHttpServer() as Server)
         .get(`/quizzes/${(created.body as { id: string }).id}`)
         .auth(durableToken, { type: 'bearer' })
         .expect(200);
-      expect(read.body).toEqual(created.body);
+      expect(read.body).toEqual(saved.body);
     } finally {
       if (second) await destroyTestApp(second.app, second.db);
       const owner = await db
