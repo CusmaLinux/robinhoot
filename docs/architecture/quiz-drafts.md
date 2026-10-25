@@ -39,7 +39,7 @@ sequenceDiagram
     App->>App: Check unique IDs and correct-option references
     alt Malformed structure
       App-->>HTTP: Domain structure error
-      HTTP-->>UI: 400 with field error; no write
+      HTTP-->>UI: 400 with field error, no write
     else Structurally valid (possibly incomplete)
       App->>DB: Single UPDATE by ownerId AND id with RETURNING
       alt Owned quiz exists
