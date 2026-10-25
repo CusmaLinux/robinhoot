@@ -4,10 +4,40 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 
 ## 1. Predecessor and owned room creation
 
-- [ ] 1.1 Verify add-quiz-authoring is implemented and archived and re-read main specs/quiz APIs; update this change if its assumptions differ, recording the contract review.
-- [ ] 1.2 Test one owned room-creation behavior then implement a versioned quiz snapshot and in-memory room port/adapter; verify edits/deletion of the source do not mutate the room.
-- [ ] 1.3 Test invalid/foreign quiz creation, owner concurrency, PIN collision, and retried creation one behavior at a time; verify no duplicate room or PIN overwrite and document POST /rooms.
-- [ ] 1.4 Document and test the create-room response and private host binding; verify HTTP creation returns a room ID/PIN for an owned hostable quiz without leaking answer keys.
+- [x] 1.1 Verify add-quiz-authoring is implemented and archived and re-read main specs/quiz APIs; update this change if its assumptions differ, recording the contract review.
+- [x] 1.2 Test one owned room-creation behavior then implement a versioned quiz snapshot and in-memory room port/adapter; verify edits/deletion of the source do not mutate the room.
+- [x] 1.3 Test invalid/foreign quiz creation, owner concurrency, PIN collision, and retried creation one behavior at a time; verify no duplicate room or PIN overwrite and document POST /rooms.
+- [x] 1.4 Document and test the create-room response and private host binding; verify HTTP creation returns a room ID/PIN for an owned hostable quiz without leaking answer keys.
+
+Issue #50 evidence (2026-10-25): predecessor #49 merged at `4487208` and
+`2026-10-24-add-quiz-authoring` archival/main specification were reviewed before
+application. Fresh predecessor checks passed (71 unit, 104 integration, four e2e,
+build). Creation, deep freezing, incomplete readiness, foreign ownership,
+active-owner exclusion, delayed concurrent reads, successful request replay,
+request-ID conflict, PIN collision, and OpenAPI publication were exercised in
+red/green slices. See the [HTTP/PostgreSQL suite](../../../test/room.controller.spec.ts),
+[deterministic registry suite](../../../src/room/infrastructure/adapters/out/in-memory-room.store.spec.ts),
+[contract handoff](../../../docs/contracts/room-creation.md), and
+[component/sequence/state diagrams](../../../docs/architecture/room-creation.md).
+HTTP checks include snapshot retention after edits/reorder/delete, safe output,
+private authenticated host binding, user/admin ownership denial, malformed UUIDs
+and ownership injection, missing/invalid/expired/revoked credentials, retries
+after source deletion, and simultaneous same/distinct requests. Concurrent HTTP
+fixtures commit through an independent app/pool and are explicitly cleaned up.
+Registry checks include defensive copying, 32-collision exhaustion without PIN
+overwrite, independent owners, and recovery after failed/pending lookups.
+
+Verification uses the isolated PostgreSQL 17 container `robinhoot-issue50-test`,
+database `robinhoot_issue50_test`, loopback port 55450, test-only credentials, and
+the four existing migrations. Unit: 81 tests / 16 suites. Integration: 128 tests /
+four suites, including 24 room HTTP behaviors. E2E: four tests. Build, TypeScript,
+scoped ESLint, strict OpenSpec validation, and whitespace checks pass. Full
+read-only lint has no errors and only the two pre-existing auth guard test
+warnings. Advisory Fallow audit passes with no introduced findings; its automatic
+boundary detector is not configured, so architecture direction was reviewed
+manually. No schema migration, production database access, UI implementation, or
+external maintainer message. Tasks 2–3 remain pending under #51–#53, and the lobby
+change remains active until those API slices and their contract handoffs pass.
 
 ## 2. Guest admission and safe roster
 

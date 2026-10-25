@@ -19,6 +19,21 @@ The system SHALL let a quiz owner create one active room from a hostable quiz an
 - **WHEN** the user requests room creation
 - **THEN** no additional room is created and a clear error is returned
 
+#### Scenario: Retried creation
+- **GIVEN** an owner created a room with a request UUID
+- **WHEN** the same authenticated owner retries that request UUID and quiz UUID while the room exists
+- **THEN** the original room metadata is returned without rereading the source or creating another room, including after source deletion
+
+#### Scenario: Concurrent creation and PIN collision
+- **GIVEN** concurrent creation requests and an allocator that may generate an active PIN
+- **WHEN** rooms are created across awaited quiz reads
+- **THEN** each owner has at most one room, active PINs are never overwritten, allocation retries are bounded, and failed creation leaves no owner reservation
+
+#### Scenario: Safe creation response and host identity
+- **GIVEN** an authenticated quiz owner creates a room
+- **WHEN** creation succeeds
+- **THEN** the response contains only room ID, string PIN, phase, revision, and creation time, while the host is privately bound to the verified account ID rather than client-supplied identity or PIN
+
 ### Requirement: PIN admission and limits
 A room SHALL have a six-digit PIN unique among active rooms. New guest admission SHALL be limited to the lobby and thirty players. A nickname SHALL be trimmed, 1–20 characters long, and unique in the room ignoring case.
 

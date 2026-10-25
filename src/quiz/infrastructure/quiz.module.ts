@@ -6,6 +6,7 @@ import { QUIZ_REPOSITORY_PORT } from '../application/ports/out/quiz.repository.p
 import { QUIZ_AUTHORING_USE_CASE_PORT } from '../application/ports/in/quiz-authoring.use-case';
 
 @Module({
+  exports: [QUIZ_AUTHORING_USE_CASE_PORT],
   controllers: [QuizController],
   providers: [
     QuizAuthoringService,
