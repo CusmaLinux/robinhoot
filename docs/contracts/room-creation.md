@@ -1,8 +1,7 @@
 # Owned room creation
 
 Issue [#50](https://github.com/CusmaLinux/robinhoot/issues/50), OpenSpec
-`add-game-lobby` tasks 1.1–1.4. This slice creates rooms; guest admission,
-Socket.IO commands, reconnect, expiry, and cancellation follow in #51–#53.
+`add-game-lobby` tasks 1.1–1.4. This slice creates rooms; [guest admission and Socket.IO host binding](lobby-admission.md) are implemented in #51. Reconnect, expiry, and cancellation follow in #52–#53.
 See the [implemented architecture](../architecture/room-creation.md).
 
 ## Create and recover an acknowledgement
@@ -44,8 +43,8 @@ content, correct answers, owner/account data, or session credentials.
 The server privately binds `host.ownerId` to the authenticated user ID and keeps
 the original request ID on the room. Neither the PIN, room ID, nor request ID
 is host authentication. Subsequent host commands must authenticate the account
-again and compare it with that private owner binding. There is no socket host
-command or host token in this slice; its transport and examples belong to #51.
+again and compare it with that private owner binding. Socket host binding now uses the same account token through `host.bind`; see
+the [admission contract](lobby-admission.md).
 The UI should retain its existing account credential and the safe room metadata.
 
 One owner can have only one active room. The same owner/request/quiz tuple

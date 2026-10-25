@@ -1,7 +1,7 @@
 # Owned room creation architecture
 
 Implemented for [issue #50](https://github.com/CusmaLinux/robinhoot/issues/50).
-See the [HTTP contract](../contracts/room-creation.md). Guest admission and
+See the [HTTP contract](../contracts/room-creation.md). [Guest admission](lobby-admission.md) is implemented in #51; reconnect and
 lifecycle work remain in the active `add-game-lobby` change.
 
 ## Components and dependencies
@@ -24,8 +24,8 @@ RoomModule binds application ports through Symbols and imports only QuizModule's
 exported authoring port. The cross-feature reader is an outbound adapter; the
 room use case does not depend on quiz infrastructure, HTTP, or PostgreSQL.
 Domain room types and errors have no framework imports. The existing application
-layer convention permits Nest injection decorators in services. No auth guard,
-quiz mutation rule, or database schema changes.
+layer convention permits Nest injection decorators in services. Creation preserves quiz mutation rules and requires no database schema changes.
+The admission slice adds explicit WebSocket handling to the account guard.
 
 The singleton memory adapter owns room/owner/PIN indexes and per-owner pending
 creation promises. Its `create` operation accepts a lazy snapshot loader so the
@@ -86,8 +86,8 @@ stateDiagram-v2
   Lobby --> [*]: API process stops
 ```
 
-Only creation transitions are implemented here. Guest joining, explicit socket
-host binding, reconnect, thirty-minute expiry, cancellation, and cleanup belong
-to #51–#53. RoomStore will need lifecycle operations in that work; the creation
+These diagrams describe creation transitions. Guest joining and explicit socket
+host binding are documented in the [admission architecture](lobby-admission.md).
+Reconnect, thirty-minute expiry, cancellation, and cleanup belong to #52–#53. RoomStore will need lifecycle operations in that work; the creation
 slice does not claim lifecycle acceptance or full-change archival. This single
 process storage is intentionally unsuitable for multiple live-room replicas.

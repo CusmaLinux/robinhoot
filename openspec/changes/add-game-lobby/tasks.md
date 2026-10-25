@@ -41,10 +41,42 @@ change remains active until those API slices and their contract handoffs pass.
 
 ## 2. Guest admission and safe roster
 
-- [ ] 2.1 Add compatible Nest/Socket.IO dependencies with pnpm and explicit transport authentication; verify private HTTP endpoints stay protected and private host messages reject unauthenticated/foreign users.
-- [ ] 2.2 Test guest join then implement join acknowledgement, nickname validation, thirty-player admission, and safe roster broadcasts; verify one host and two guests share an isolated lobby.
-- [ ] 2.3 Test duplicate join request retries, duplicate nicknames, invalid PINs, full rooms, and admission throttling one at a time; verify clear errors and unchanged slot counts.
-- [ ] 2.4 Document join/acknowledgement/roster event examples and test them with independent Socket.IO clients; verify explicit connection/session data and no other players' credentials or correct-answer metadata in public payloads.
+- [x] 2.1 Add compatible Nest/Socket.IO dependencies with pnpm and explicit transport authentication; verify private HTTP endpoints stay protected and private host messages reject unauthenticated/foreign users.
+- [x] 2.2 Test guest join then implement join acknowledgement, nickname validation, thirty-player admission, and safe roster broadcasts; verify one host and two guests share an isolated lobby.
+- [x] 2.3 Test duplicate join request retries, duplicate nicknames, invalid PINs, full rooms, and admission throttling one at a time; verify clear errors and unchanged slot counts.
+- [x] 2.4 Document join/acknowledgement/roster event examples and test them with independent Socket.IO clients; verify explicit connection/session data and no other players' credentials or correct-answer metadata in public payloads.
+
+Issue #51 evidence (2026-10-25): #50 is merged at `fbb3aba`; re-read the
+current room creation/snapshot/store contract, archived authoring predecessor,
+and main quiz-authoring, user-auth, and jwt-guard specs. No predecessor contract
+change was needed. Implemented `lobby.join`, authenticated `host.bind`, private
+acknowledgements, room-only safe roster snapshots, offline guest state, bounded
+connection/source attempts, and one connection/actor/room binding. Admission
+and limiter behaviors were developed in failing-test/minimal-implementation
+slices, followed by real Nest/Socket.IO/PostgreSQL acceptance verification.
+
+Verification: 95 unit tests / 18 suites; 128 integration tests / four suites;
+29 e2e tests / two suites (25 real transport admission behaviors and four
+existing auth/roles checks). Database-backed checks used only the dedicated
+`robinhoot_issue50_test` database, test-only credentials, and loopback port
+55450. Build, TypeScript, strict OpenSpec validation, and whitespace checks pass.
+Read-only full ESLint has zero errors and the same two pre-existing auth-test
+warnings. Advisory Fallow audit passes without introduced findings after
+registering e2e entry points; architecture dependencies were reviewed manually
+because automatic boundaries are not configured.
+
+See [contract examples and API/UI handoff](../../../docs/contracts/lobby-admission.md),
+[component/sequence/state diagrams](../../../docs/architecture/lobby-admission.md),
+and [real transport suite](../../../test/lobby.gateway.e2e-spec.ts). The admission
+receipt is bound to the original connection and normalized nickname; a copied
+UUID never discloses a secret. At most thirty receipts are retained per room;
+disconnect clears their plaintext secrets while preserving room/player verifiers
+and reserved slots. The limiter defaults to ten attempts/connection and sixty
+attempts/source in sixty seconds, with a 10,000-source table; RoomModule's Symbol
+binding configures these pilot limits. Closed admission is tested with internal
+closed state; closure commands/timers remain #53. No migration, production
+database, UI implementation, or external maintainer message. Tasks 3.1–3.3 remain
+pending for #52–#53, and this change is not ready to archive.
 
 ## 3. Restore and close the lobby
 
