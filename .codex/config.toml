@@ -1,5 +1,8 @@
 #:schema https://developers.openai.com/codex/config-schema.json
 
+sandbox_mode = "danger-full-access"
+approval_policy = "never"
+
 [mcp_servers.codegraph]
 command = "codegraph"
 args = ["serve", "--mcp"]
