@@ -4,6 +4,9 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [Owned room creation contract](contracts/room-creation.md): safe metadata, immutable snapshots, host identity, unique PINs, retries, and errors.
+- [Room creation architecture](architecture/room-creation.md): ports, owner serialization, creation/retry sequence, and current state transitions.
+
 - [Private quiz draft API contract](contracts/quiz-drafts.md): authenticated create/list/read/save/delete, question ordering, stable IDs, ownership, readiness errors, and test database instructions.
 - [Two-account authoring walkthrough](contracts/quiz-authoring-walkthrough.md): two-question creation, editing, reordering, access denial, and deletion for API/UI handoff.
 - [Quiz draft architecture](architecture/quiz-drafts.md): verified components, request sequence, and draft state.

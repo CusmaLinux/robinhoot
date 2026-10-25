@@ -3,6 +3,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/infrastructure/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { QuizModule } from './quiz/infrastructure/quiz.module';
+import { RoomModule } from './room/infrastructure/room.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { QuizModule } from './quiz/infrastructure/quiz.module';
     DatabaseModule,
     AuthModule,
     QuizModule,
+    RoomModule,
   ],
   controllers: [],
   providers: [],

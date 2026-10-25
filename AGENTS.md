@@ -64,3 +64,10 @@ If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is 
   files; docs-writer and review have shell tools disabled.
 - OpenCode `/test` corresponds to Codex `$project-test`. Database-backed tests
   require the test database; do not silently substitute the production database.
+
+## Agent permissions
+When I ask you to resolve an issue and create a PR, proceed with related implementation, tests, documentation, branch creation, pushing, and PR creation without asking for routine confirmation.
+
+Before creating each signed commit, show me a concise change and verification summary, then wait for my explicit approval. Never disable or bypass commit signing.
+
+Merging and deployment require a separate request.

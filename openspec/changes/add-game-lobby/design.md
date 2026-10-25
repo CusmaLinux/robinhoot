@@ -13,6 +13,30 @@ Non-goals: starting rounds, student accounts, durable live state, horizontal sca
 
 ## Decisions
 
+Predecessor review (2026-10-25, issue #50): #49 is merged in main at
+`4487208`; `add-quiz-authoring` is archived as `2026-10-24-add-quiz-authoring`.
+Re-read the resulting main quiz-authoring specification, owned read/save/delete
+ports, readiness rules, HTTP contract, and archival evidence. Fresh predecessor
+verification on the dedicated `robinhoot_issue50_test` database: 71 unit tests,
+104 integration tests, four e2e tests, and build pass. Authoring read returns an
+owned quiz with derived readiness or null; incomplete drafts remain valid saved
+content. Room creation must reject incomplete content and copy the aggregate,
+including stable identities and array order, without a quiz foreign key.
+No predecessor contract change is needed.
+
+Issue #50 contract decisions: `POST /rooms` requires UUID `quizId` and
+`requestId`, normalized to lowercase. The successful receipt is one request ID
+retained on the active room, scoped by authenticated owner. Same request/quiz
+replays HTTP 201; reuse for another quiz is 409 `CREATION_REQUEST_CONFLICT`.
+An owner with another active request receives 409 `OWNER_HAS_ACTIVE_ROOM`.
+PIN allocation tries at most 32 candidates before 503
+`PIN_ALLOCATION_EXHAUSTED`. All failures release the owner reservation. Internal
+host binding is `{ownerId}` from the verified account; no host secret or quiz
+content is returned. See the [implemented contract](../../../docs/contracts/room-creation.md)
+and [current diagrams](../../../docs/architecture/room-creation.md). Socket host
+authentication and lifecycle transitions remain in #51–#53; no socket event is
+introduced by the creation slice.
+
 1. Add a live-game application boundary with RoomStore, QuizSnapshotReader, Clock, Scheduler, and CredentialIssuer ports as needed by tested behaviors. Use Symbol DI tokens and infrastructure adapters. Read an owned, validated quiz once when creating the room and deep-copy a versioned snapshot; do not re-read mutable quiz content during play.
 2. Use a single-process in-memory room registry and per-room serialized mutations. Guard room creation per owner across any awaited quiz lookup to enforce one active room. Generate six-digit PINs including leading zeros with a collision check; retry boundedly and fail gracefully if allocation fails. Never overwrite an active PIN.
 3. POST /rooms accepts quizId under account authentication and returns owner-safe room metadata and PIN. Use request IDs for retriable room creation; retain a bounded creation receipt while the room exists so a lost acknowledgement does not cause a second room. Invalid quiz returns 400; foreign quiz returns 404; another active room returns 409.
