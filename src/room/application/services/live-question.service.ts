@@ -10,8 +10,9 @@ import type { QuestionEventsPort } from '../ports/out/question-events.port';
 import type {
   LiveQuestionPort,
   StartQuestionInput,
+  SubmitAnswerInput,
 } from '../ports/in/live-question.use-case';
-import type { QuestionState } from '../../domain/live-question';
+import type { AnswerReceipt, QuestionState } from '../../domain/live-question';
 import { LobbyError } from '../../domain/lobby';
 import type { Room } from '../../domain/room';
 
@@ -57,6 +58,8 @@ export class LiveQuestionService implements LiveQuestionPort {
       phase: 'question_open',
       revision: current.revision + 1,
       round: Object.freeze({
+        scores: Object.freeze([]),
+        answers: Object.freeze([]),
         commandId: input.commandId,
         expectedRevision: input.expectedRevision,
         questionIndex: 0,
@@ -78,6 +81,77 @@ export class LiveQuestionService implements LiveQuestionPort {
     this.events.opened(state);
     return this.project(next);
   }
+  submit(input: SubmitAnswerInput): AnswerReceipt {
+    this.lifecycle.assertOpen(input.roomId);
+    const room = this.rooms.findById(input.roomId)!;
+    const guest = room.guests.find(
+      (g) => g.connectionId === input.connectionId,
+    );
+    if (!guest)
+      throw new LobbyError(
+        'SESSION_REPLACED',
+        'Connection no longer owns this guest session',
+      );
+    const round = room.round;
+    if (!round) throw new LobbyError('WRONG_PHASE', 'No question is open');
+    const question = room.quiz.questions[round.questionIndex];
+    if (question.id !== input.questionId)
+      throw new LobbyError(
+        'WRONG_QUESTION',
+        'Answer must target the current question',
+      );
+    if (!question.options.some((o) => o.id === input.optionId))
+      throw new LobbyError(
+        'INVALID_OPTION',
+        'Option does not belong to this question',
+      );
+    if (!round.eligiblePlayerIds.includes(guest.playerId))
+      throw new LobbyError(
+        'FORBIDDEN',
+        'Player is not eligible for this question',
+      );
+    const accepted = round.answers.find((a) => a.playerId === guest.playerId);
+    if (
+      accepted?.receipt.submissionId === input.submissionId &&
+      accepted.receipt.optionId === input.optionId
+    )
+      return { ...accepted.receipt };
+    if (accepted?.receipt.submissionId === input.submissionId)
+      throw new LobbyError(
+        'SUBMISSION_CONFLICT',
+        'Submission ID was accepted with different content',
+      );
+    if (accepted)
+      throw new LobbyError(
+        'ALREADY_ANSWERED',
+        'Player already answered this question',
+      );
+    if (this.runtime.now() >= round.monotonicDeadline)
+      throw new LobbyError('LATE_ANSWER', 'Question deadline has passed');
+    if (room.phase !== 'question_open')
+      throw new LobbyError('WRONG_PHASE', 'Question is not open');
+    const receipt: AnswerReceipt = Object.freeze({
+      roomId: room.roomId,
+      questionId: question.id,
+      submissionId: input.submissionId,
+      optionId: input.optionId,
+      accepted: true,
+      acceptedAt: this.runtime.wallNow(),
+      revision: room.revision + 1,
+    });
+    this.rooms.mutate(room.roomId, (current) => ({
+      ...current,
+      revision: receipt.revision,
+      round: Object.freeze({
+        ...round,
+        answers: Object.freeze([
+          ...round.answers,
+          Object.freeze({ playerId: guest.playerId, receipt }),
+        ]),
+      }),
+    }));
+    return { ...receipt };
+  }
   close(roomId: string): void {
     const room = this.rooms.findById(roomId);
     if (!room?.round || room.phase !== 'question_open') return;
@@ -94,12 +168,43 @@ export class LiveQuestionService implements LiveQuestionPort {
     if (!this.isAvailable(roomId)) return;
     const next = this.rooms.mutate(roomId, (current) => ({
       ...current,
+      round: Object.freeze({
+        ...current.round!,
+        scores: Object.freeze(
+          current.round!.eligiblePlayerIds.map((playerId) =>
+            Object.freeze({
+              playerId,
+              points: current.round!.answers.some(
+                (a) =>
+                  a.playerId === playerId &&
+                  current.quiz.questions[
+                    current.round!.questionIndex
+                  ].correctOptionIds.includes(a.receipt.optionId),
+              )
+                ? 1000
+                : 0,
+            }),
+          ),
+        ),
+      }),
       phase: 'question_reveal',
       revision: current.revision + 1,
     }));
     this.timers.get(roomId)?.();
     this.timers.delete(roomId);
-    this.events.revealed(this.project(next));
+    this.events.revealed(
+      this.project(next),
+      next.guests.flatMap((guest) =>
+        guest.connectionId
+          ? [
+              {
+                connectionId: guest.connectionId,
+                state: this.project(next, guest.connectionId),
+              },
+            ]
+          : [],
+      ),
+    );
   }
   private isAvailable(roomId: string): boolean {
     try {
@@ -112,14 +217,28 @@ export class LiveQuestionService implements LiveQuestionPort {
       throw error;
     }
   }
-  snapshot(roomId: string): QuestionState | null {
+  snapshot(roomId: string, connectionId?: string): QuestionState | null {
     this.close(roomId);
     const room = this.rooms.findById(roomId);
-    return room?.round ? this.project(room) : null;
+    if (connectionId) {
+      this.lifecycle.assertOpen(roomId);
+      if (!room?.guests.some((g) => g.connectionId === connectionId))
+        throw new LobbyError(
+          'SESSION_REPLACED',
+          'Connection no longer owns this guest session',
+        );
+    }
+    return room?.round ? this.project(room, connectionId) : null;
   }
-  private project(room: Room): QuestionState {
+  private project(room: Room, connectionId?: string): QuestionState {
+    const playerId = room.guests.find(
+      (g) => g.connectionId === connectionId,
+    )?.playerId;
     const round = room.round!;
     const question = room.quiz.questions[round.questionIndex];
+    const accepted = round.answers.find(
+      (answer) => answer.playerId === playerId,
+    );
     return {
       roomId: room.roomId,
       questionId: question.id,
@@ -140,7 +259,10 @@ export class LiveQuestionService implements LiveQuestionPort {
       deadline: round.deadline,
       serverNow: this.runtime.wallNow(),
       timeUnit: 'milliseconds',
-      score: 0,
+      ...(playerId
+        ? { acceptedAnswer: accepted ? { ...accepted.receipt } : null }
+        : {}),
+      score: round.scores.find((s) => s.playerId === playerId)?.points ?? 0,
       ...(room.phase === 'question_reveal'
         ? { correctOptionIds: [...question.correctOptionIds] }
         : {}),

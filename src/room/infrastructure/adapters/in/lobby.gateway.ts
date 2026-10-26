@@ -10,6 +10,7 @@ import {
   restoreInput,
   cancelInput,
   startInput,
+  answerInput,
 } from './lobby-input';
 import { AdmissionLimiter, ADMISSION_LIMITS } from './admission-limiter';
 import type { AdmissionLimits } from './admission-limiter';
@@ -128,6 +129,25 @@ export class LobbyGateway {
     };
   }
 
+  @Public()
+  @SubscribeMessage('answer.submit')
+  submit(
+    @ConnectedSocket() client: LobbySocket,
+    @MessageBody() payload: unknown,
+  ) {
+    const input = answerInput(payload);
+    const bound = this.rooms.get(client);
+    if (!bound || bound.role !== 'guest' || bound.roomId !== input.roomId)
+      throw new LobbyError(
+        'FORBIDDEN',
+        'Connection is not bound as this room guest',
+      );
+    return {
+      ok: true,
+      data: this.live.submit({ ...input, connectionId: client.id }),
+    };
+  }
+
   @SubscribeMessage('host.cancel')
   cancel(
     @ConnectedSocket() client: LobbySocket,
@@ -234,7 +254,10 @@ export class LobbyGateway {
     result.state = await this.subscribeSnapshot(client, result.roomId, () =>
       this.lobby.syncGuest(result.roomId, client.id),
     );
-    this.server.to(`lobby:${result.roomId}`).emit('lobby.roster', result.state);
+    const { roomId, revision, phase, roster } = result.state;
+    this.server
+      .to(`lobby:${roomId}`)
+      .emit('lobby.roster', { roomId, revision, phase, roster });
     return { ok: true, data: result };
   }
 
@@ -254,7 +277,14 @@ export class LobbyGateway {
       // The adapter subscription is complete before this synchronous authority check
       // and snapshot. Mutations during join are in the snapshot; later ones are events.
       const state = read();
-      return { ...state, ...(this.live.snapshot(roomId) ?? {}) };
+      const bound = this.rooms.get(client);
+      return {
+        ...state,
+        ...(this.live.snapshot(
+          roomId,
+          bound?.role === 'guest' ? client.id : undefined,
+        ) ?? {}),
+      };
     } catch (error) {
       await client.leave(channel);
       throw error;

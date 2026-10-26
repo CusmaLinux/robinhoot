@@ -25,6 +25,15 @@ describe('Timed first question', () => {
       expectedRevision: 1,
       ...overrides,
     });
+  const submit = (overrides = {}) =>
+    live.submit({
+      roomId: room.roomId,
+      connectionId: 'guest',
+      questionId: 'question',
+      submissionId: 'submission',
+      optionId: 'b',
+      ...overrides,
+    });
   beforeEach(async () => {
     jest.useFakeTimers();
     monotonic = 100;
@@ -89,6 +98,195 @@ describe('Timed first question', () => {
     lifecycle.onModuleDestroy();
     jest.useRealTimers();
   });
+  it('accepts one answer for the current bound guest without revealing correctness', () => {
+    start();
+    const receipt = live.submit({
+      roomId: room.roomId,
+      connectionId: 'guest',
+      questionId: 'question',
+      submissionId: 'submission',
+      optionId: 'b',
+    });
+    expect(receipt).toEqual({
+      roomId: room.roomId,
+      questionId: 'question',
+      submissionId: 'submission',
+      optionId: 'b',
+      accepted: true,
+      acceptedAt: Date.now(),
+      revision: 3,
+    });
+    expect(rooms.findById(room.roomId)?.revision).toBe(3);
+    expect(events.revealed).not.toHaveBeenCalled();
+  });
+  it('returns the original receipt for an accepted retry even after reveal', () => {
+    start();
+    const receipt = submit();
+    monotonic += 20_000;
+    live.close(room.roomId);
+    const revision = rooms.findById(room.roomId)!.revision;
+    expect(submit()).toEqual(receipt);
+    expect(rooms.findById(room.roomId)!.revision).toBe(revision);
+  });
+  it('rejects a different second submission without replacing the first answer', () => {
+    start();
+    submit();
+    const before = rooms.findById(room.roomId);
+    expect(() => submit({ submissionId: 'second', optionId: 'a' })).toThrow(
+      expect.objectContaining({ code: 'ALREADY_ANSWERED' }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(before);
+  });
+  it('rejects changed content under an accepted submission ID', () => {
+    start();
+    submit();
+    const before = rooms.findById(room.roomId);
+    expect(() => submit({ optionId: 'a' })).toThrow(
+      expect.objectContaining({ code: 'SUBMISSION_CONFLICT' }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(before);
+  });
+  it('rejects a new answer at the exact deadline before a delayed close callback', () => {
+    start();
+    monotonic += 20_000;
+    const before = rooms.findById(room.roomId);
+    expect(() => submit()).toThrow(
+      expect.objectContaining({ code: 'LATE_ANSWER' }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(before);
+  });
+  it('awards a correct accepted answer 1000 points exactly once at reveal', () => {
+    start();
+    submit();
+    monotonic += 20_000;
+    live.close(room.roomId);
+    callbacks.forEach((callback) => callback());
+    expect(live.snapshot(room.roomId, 'guest')).toMatchObject({ score: 1000 });
+    expect(events.revealed).toHaveBeenCalledTimes(1);
+  });
+  it('restores only the returning guest acceptance without early correctness', () => {
+    start();
+    const receipt = submit();
+    expect(live.snapshot(room.roomId, 'guest')).toMatchObject({
+      acceptedAnswer: receipt,
+      score: 0,
+      phase: 'question_open',
+    });
+    expect(live.snapshot(room.roomId)).not.toHaveProperty('acceptedAnswer');
+    expect(live.snapshot(room.roomId, 'guest')).not.toHaveProperty(
+      'correctOptionIds',
+    );
+  });
+  it.each([
+    ['wrong question', { questionId: 'old-question' }, 'WRONG_QUESTION'],
+    ['unknown option', { optionId: 'foreign-option' }, 'INVALID_OPTION'],
+    ['unbound connection', { connectionId: 'stranger' }, 'SESSION_REPLACED'],
+    ['host connection', { connectionId: 'host' }, 'SESSION_REPLACED'],
+  ])('rejects %s without mutation', (_name, input, code) => {
+    start();
+    const before = rooms.findById(room.roomId);
+    expect(() => submit(input)).toThrow(
+      expect.objectContaining({ code }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(before);
+  });
+
+  it('accepts just before the deadline even when the wall clock jumps forward', () => {
+    start();
+    monotonic += 19_999;
+    jest.setSystemTime(Date.now() + 3_600_000);
+    expect(submit().accepted).toBe(true);
+  });
+
+  it('rejects a new answer after reveal even when the callback ran first', () => {
+    start();
+    monotonic += 20_001;
+    callbacks[0]();
+    const before = rooms.findById(room.roomId);
+    expect(() => submit()).toThrow(
+      expect.objectContaining({ code: 'LATE_ANSWER' }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(before);
+  });
+
+  it('does not shorten the timer when all eligible players have answered', () => {
+    const opened = start();
+    submit();
+    monotonic += 19_999;
+    expect(live.snapshot(room.roomId, 'guest')).toMatchObject({
+      phase: 'question_open',
+      score: 0,
+      deadline: opened.deadline,
+    });
+    expect(events.revealed).not.toHaveBeenCalled();
+  });
+
+  it('gives a wrong accepted answer zero points at reveal', () => {
+    start();
+    submit({ optionId: 'a' });
+    monotonic += 20_000;
+    live.close(room.roomId);
+    expect(live.snapshot(room.roomId, 'guest')?.score).toBe(0);
+  });
+
+  it('returns an accepted retry before closure without mutation or receipt aliasing', () => {
+    start();
+    const receipt = submit();
+    const revision = rooms.findById(room.roomId)!.revision;
+    monotonic += 500;
+    jest.advanceTimersByTime(500);
+    expect(submit()).toEqual(receipt);
+    expect(rooms.findById(room.roomId)!.revision).toBe(revision);
+    Object.assign(receipt, { optionId: 'a' });
+    expect(submit().optionId).toBe('b');
+  });
+
+  it('denies a replaced connection access to its old receipt', () => {
+    start();
+    submit();
+    const guest = rooms.findById(room.roomId)!.guests[0];
+    lobby.restore({
+      roomId: room.roomId,
+      credential: guest.admission.credential,
+      connectionId: 'replacement',
+    });
+    expect(() => submit()).toThrow(
+      expect.objectContaining({ code: 'SESSION_REPLACED' }) as Error,
+    );
+    expect(submit({ connectionId: 'replacement' }).accepted).toBe(true);
+  });
+
+  it('invalidates accepted receipts when the room is cancelled', () => {
+    start();
+    submit();
+    lifecycle.cancel(room.roomId, 'owner');
+    expect(() => submit()).toThrow(
+      expect.objectContaining({ code: 'ROOM_CLOSED' }) as Error,
+    );
+  });
+  it('rejects a submission before any question opens without mutation', () => {
+    const before = rooms.findById(room.roomId);
+    expect(() => submit()).toThrow(
+      expect.objectContaining({ code: 'WRONG_PHASE' }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(before);
+  });
+
+  it('preserves conflict errors after reveal instead of treating accepted players as late', () => {
+    start();
+    const receipt = submit();
+    monotonic += 20_000;
+    live.close(room.roomId);
+    expect(() => submit({ optionId: 'a' })).toThrow(
+      expect.objectContaining({ code: 'SUBMISSION_CONFLICT' }) as Error,
+    );
+    expect(() => submit({ submissionId: 'new' })).toThrow(
+      expect.objectContaining({ code: 'ALREADY_ANSWERED' }) as Error,
+    );
+    expect(submit()).toEqual(receipt);
+    expect(live.snapshot(room.roomId, 'guest')?.score).toBe(1000);
+  });
+
   it('opens the first snapshot question for the owner and freezes eligibility', () => {
     const opened = start();
     expect(opened).toMatchObject({
@@ -159,6 +357,7 @@ describe('Timed first question', () => {
         score: 0,
         deadline: opened.deadline,
       }),
+      expect.any(Array),
     );
     callbacks.forEach((callback) => callback());
     expect(events.revealed).toHaveBeenCalledTimes(1);

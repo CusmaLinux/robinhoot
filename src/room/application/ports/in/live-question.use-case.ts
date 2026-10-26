@@ -1,4 +1,7 @@
-import type { QuestionState } from '../../../domain/live-question';
+import type {
+  AnswerReceipt,
+  QuestionState,
+} from '../../../domain/live-question';
 export const LIVE_QUESTION_PORT = Symbol('LIVE_QUESTION_PORT');
 export interface StartQuestionInput {
   roomId: string;
@@ -7,7 +10,15 @@ export interface StartQuestionInput {
   commandId: string;
   expectedRevision: number;
 }
+export interface SubmitAnswerInput {
+  roomId: string;
+  connectionId: string;
+  questionId: string;
+  submissionId: string;
+  optionId: string;
+}
 export interface LiveQuestionPort {
+  submit(input: SubmitAnswerInput): AnswerReceipt;
   start(input: StartQuestionInput): QuestionState;
-  snapshot(roomId: string): QuestionState | null;
+  snapshot(roomId: string, connectionId?: string): QuestionState | null;
 }

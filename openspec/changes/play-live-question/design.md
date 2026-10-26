@@ -54,3 +54,29 @@ preserving host absence/cancellation. Store one accepted start command and
 expected-revision fingerprint; retry reads current safe state without restarting.
 Answer acceptance/nonzero scoring remain #55; full active recovery acceptance
 remains #56. This change remains active until both follow-ups are verified.
+
+## Answer acceptance reconciliation — issue #55 (2026-10-26)
+
+Re-read the archived lobby predecessor and actual main `game-lobby`,
+`quiz-authoring`, `user-auth`, and `jwt-guard` specifications. Issue #54 is
+implemented on main (`1cdfce0`, documentation correction `b281e6b`); it leaves
+this change active for #55 and #56. The agreed #55 contract supplies the
+interface and behavior priorities for one-test/one-behavior TDD.
+
+Extend `LIVE_QUESTION_PORT` with synchronous `submit`, taking the current
+connection rather than a submitted player identity. Keep one frozen receipt per
+eligible player in `LiveRound`; submission IDs are scoped to player/question.
+Validate current session and question/option fields before retry lookup, then
+check monotonic time for new answers. Stable additional errors are
+`WRONG_QUESTION`, `INVALID_OPTION`, `SUBMISSION_CONFLICT`, `ALREADY_ANSWERED`, and
+`LATE_ANSWER`. Accepted retries do not settle the reveal or alter their original
+acceptance revision; state sync and the scheduled callback supply current state.
+
+Reveal stores frozen per-player scores in the same once-only transition. Guest
+snapshots and reveal events add only that guest's `acceptedAnswer` receipt/null
+and score. Host/shared opening projections keep score zero and omit receipts.
+The event port supplies current connection-specific views; the single-process
+socket adapter excludes guests from the public reveal and emits their private
+view only while still subscribed. Roster broadcasts select only display fields.
+No new store, credentials, migration, or DI token is required. Full active-round
+recovery/host-absence acceptance and final archival remain #56.
