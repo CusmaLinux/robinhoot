@@ -44,14 +44,14 @@ sequenceDiagram
   Gateway->>Auth: Revalidate account token
   Gateway->>Live: Start using bound owner and connection
   Live->>Live: Check owner/current host, retry receipt, phase, roster, revision
-  Live->>Store: Freeze eligible players, receipt and fixed deadline; increment revision
-  Live->>Live: Cancel idle lobby expiry; retain host absence policy
+  Live->>Store: Freeze eligible players, receipt and fixed deadline and increment revision
+  Live->>Live: Cancel idle lobby expiry and retain host absence policy
   Live->>Timer: Schedule one authoritative deadline
   Live-->>Host: Safe acknowledgement and question.opened
   Live-->>Guests: question.opened, labels A–D, no correctness
   Timer->>Live: Deadline callback
   Live->>Live: Check room still active and monotonic cutoff
-  Live->>Store: Reveal exactly once; increment revision
+  Live->>Store: Reveal exactly once and increment revision
   Live-->>Host: question.revealed, correct option, zero points
   Live-->>Guests: question.revealed, correct option, zero points
 ```
@@ -66,7 +66,7 @@ stateDiagram-v2
   QuestionReveal --> QuestionReveal: Accepted retry returns current reveal
   QuestionOpen --> Closed: Owner cancellation or host timeout
   QuestionReveal --> Closed: Owner cancellation or host timeout
-  Closed --> [*]: Live state removed; bounded closure tombstone retained
+  Closed --> [*]: Live state removed and bounded closure tombstone retained
 ```
 
 A state read can settle a delayed reveal callback before projecting its current
