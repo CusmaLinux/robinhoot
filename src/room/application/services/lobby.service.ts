@@ -1,3 +1,5 @@
+import { LOBBY_LIFECYCLE_PORT } from '../ports/in/lobby-lifecycle.use-case';
+import type { LobbyLifecyclePort } from '../ports/in/lobby-lifecycle.use-case';
 import { Inject, Injectable } from '@nestjs/common';
 import { ROOM_STORE_PORT } from '../ports/out/room-store.port';
 import type { RoomStorePort } from '../ports/out/room-store.port';
@@ -43,9 +45,12 @@ export class LobbyService implements LobbyUseCasePort {
     @Inject(ROOM_STORE_PORT) private readonly rooms: RoomStorePort,
     @Inject(GUEST_CREDENTIAL_ISSUER_PORT)
     private readonly credentials: GuestCredentialIssuerPort,
+    @Inject(LOBBY_LIFECYCLE_PORT)
+    private readonly lifecycle: LobbyLifecyclePort,
   ) {}
 
   syncGuest(roomId: string, connectionId: string): LobbyState {
+    this.lifecycle.assertOpen(roomId);
     const room = this.rooms.findById(roomId);
     if (!room?.guests.some((guest) => guest.connectionId === connectionId))
       throw new LobbyError(
@@ -58,6 +63,7 @@ export class LobbyService implements LobbyUseCasePort {
   }
 
   restore(input: RestoreLobbyInput) {
+    this.lifecycle.assertOpen(input.roomId);
     const room = this.rooms.findById(input.roomId);
     const guest = room?.guests.find((candidate) =>
       this.credentials.verify(input.credential, candidate.credentialVerifier),
@@ -134,6 +140,7 @@ export class LobbyService implements LobbyUseCasePort {
   }
 
   bindHost(roomId: string, ownerId: string): LobbyState {
+    this.lifecycle.assertOpen(roomId);
     const room = this.rooms.findById(roomId);
     if (!room || room.host.ownerId !== ownerId)
       throw new LobbyError('FORBIDDEN', 'Room is not owned by this account');
@@ -146,6 +153,7 @@ export class LobbyService implements LobbyUseCasePort {
     const nickname = normalizeNickname(input.nickname);
     const room = this.rooms.findByPin(input.pin);
     if (!room) throw new LobbyError('INVALID_PIN', 'No lobby has this PIN');
+    this.lifecycle.assertOpen(room.roomId);
     if (room.phase !== 'lobby')
       throw new LobbyError('ROOM_CLOSED', 'Room is closed');
     if (input.boundRoomId && input.boundRoomId !== room.roomId)

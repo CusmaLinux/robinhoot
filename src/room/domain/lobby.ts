@@ -25,3 +25,12 @@ export class LobbyError extends Error {
     super(message);
   }
 }
+
+export type LobbyClosureReason =
+  'OWNER_CANCELLED' | 'LOBBY_EXPIRED' | 'HOST_TIMEOUT';
+export interface LobbyClosure {
+  roomId: string;
+  revision: number;
+  phase: 'closed';
+  reason: LobbyClosureReason;
+}

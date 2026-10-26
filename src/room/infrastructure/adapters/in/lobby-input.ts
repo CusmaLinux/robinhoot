@@ -48,3 +48,16 @@ export function restoreInput(payload: unknown) {
     );
   return { roomId: input.roomId.toLowerCase(), credential: input.credential };
 }
+
+export function cancelInput(payload: unknown) {
+  const input = object(payload, ['roomId', 'commandId']);
+  if (!isUUID(input.roomId) || !isUUID(input.commandId))
+    throw new LobbyError(
+      'INVALID_PAYLOAD',
+      'roomId and commandId must be UUIDs',
+    );
+  return {
+    roomId: input.roomId.toLowerCase(),
+    commandId: input.commandId.toLowerCase(),
+  };
+}

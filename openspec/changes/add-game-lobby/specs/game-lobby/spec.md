@@ -120,3 +120,18 @@ An idle lobby SHALL expire thirty minutes after creation. The owner SHALL be abl
 - **GIVEN** the owner has remained disconnected for 120 seconds
 - **WHEN** the reconnect window expires
 - **THEN** the room is cancelled and participants receive the reason
+
+#### Scenario: Current host replacement
+- **GIVEN** the authenticated owner has a bound host connection
+- **WHEN** the same owner binds a replacement connection
+- **THEN** only the new connection can sync or cancel, an obsolete disconnect cannot start host absence, and a superseded pending subscription cannot reclaim authority
+
+#### Scenario: Closure cleanup and retries
+- **GIVEN** a lobby has guest credentials, receipts, and lifecycle timers
+- **WHEN** the owner cancels or a lifecycle deadline is reached
+- **THEN** connected subscribed participants receive one terminal reason/revision, room credentials/receipts/timers and owner/PIN indexes are released, further admission fails, and a bounded five-minute closure tombstone explains reconnection failures and owner retries
+
+#### Scenario: Deadline checks and stale callbacks
+- **GIVEN** a host-return or creation deadline has passed but its callback is delayed
+- **WHEN** an actor tries to bind, restore, or join, or a scheduled callback is dispatched repeatedly
+- **THEN** the earliest deadline closes the original room once, return cannot extend creation expiry, and stale callbacks cannot affect a replacement room

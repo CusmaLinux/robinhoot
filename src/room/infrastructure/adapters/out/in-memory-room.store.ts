@@ -18,6 +18,7 @@ export class InMemoryRoomStore implements RoomStorePort {
   constructor(
     private readonly generatePin = () =>
       randomInt(1_000_000).toString().padStart(6, '0'),
+    private readonly now = () => Date.now(),
   ) {}
 
   async create(
@@ -56,7 +57,7 @@ export class InMemoryRoomStore implements RoomStorePort {
       phase: 'lobby',
       guests: Object.freeze([]),
       revision: 0,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(this.now()).toISOString(),
       host: Object.freeze({ ownerId: input.ownerId }),
       creationRequestId: input.requestId,
       quiz,
@@ -65,6 +66,14 @@ export class InMemoryRoomStore implements RoomStorePort {
     this.owners.set(input.ownerId, room);
     this.pins.set(room.pin, room);
     return room;
+  }
+
+  remove(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    this.rooms.delete(roomId);
+    this.owners.delete(room.host.ownerId);
+    this.pins.delete(room.pin);
   }
 
   mutate(roomId: string, change: (room: Room) => Room): Room {
