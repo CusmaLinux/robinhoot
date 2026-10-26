@@ -47,7 +47,7 @@ changing ownership or HTTP authentication. See the
 
 Issue #51 decisions: default namespace `/`, Socket.IO path `/socket.io`, and
 `host.bind {roomId}` with handshake `auth.token` establish host subscriptions.
-Only `lobby.join` is public; private gateway messages explicitly use the existing
+In the #51 admission slice, only `lobby.join` is public; private gateway messages explicitly use the existing
 JWT validator on every message and compare the verified account with host.ownerId.
 `lobby.roster` publishes an explicit safe state projection. Guest credentials
 have 256 random bits and a stored SHA-256 verifier bound to room/player.
@@ -68,6 +68,25 @@ forwarded headers. These are pilot defaults to tune with evidence. No new public
 lifecycle command is added here; the internal phase check rejects closed rooms,
 while actual cancellation, expiry, and cleanup remain #53. `add-game-lobby`
 remains active until #52–#53 and their handoff/verification are complete.
+
+Issue #52 contract review (2026-10-25): predecessor #51 merged at `660457c`;
+re-read actual admission/receipt/store behavior and the main quiz-authoring,
+user-auth, and jwt-guard specs. The authoring predecessor remains archived as
+`2026-10-24-add-quiz-authoring`; no predecessor contract change is needed.
+
+Issue #52 decisions: `session.restore {roomId,credential}` authenticates only
+against that room's guest verifier, preserves identity/slot, and replaces the
+current connection with one revision increment. Restore retries on the current
+connection are read-only. Rebinding clears admission plaintext, invalidates old
+receipt authority, and evicts the old socket subscription. `state.sync {roomId}`
+requires a bound current guest or a freshly validated host token. Admission,
+restore, host bind, and sync await subscription before a synchronous authority
+recheck/current snapshot capture. Intervening mutations are in the snapshot;
+later mutations arrive as events. Superseded pending subscriptions are rejected
+and removed. Join/restore share attempt budgets. See [event examples and ordering](../../../docs/contracts/lobby-restoration.md)
+and [sequence/state diagrams](../../../docs/architecture/lobby-admission.md).
+Lifecycle timers, host replacement policy, cancellation, and closure cleanup
+remain #53. This change stays active.
 
 1. Add a live-game application boundary with RoomStore, QuizSnapshotReader, Clock, Scheduler, and CredentialIssuer ports as needed by tested behaviors. Use Symbol DI tokens and infrastructure adapters. Read an owned, validated quiz once when creating the room and deep-copy a versioned snapshot; do not re-read mutable quiz content during play.
 2. Use a single-process in-memory room registry and per-room serialized mutations. Guard room creation per owner across any awaited quiz lookup to enforce one active room. Generate six-digit PINs including leading zeros with a collision check; retry boundedly and fail gracefully if allocation fails. Never overwrite an active PIN.

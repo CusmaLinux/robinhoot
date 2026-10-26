@@ -70,6 +70,34 @@ The system SHALL issue a private room-scoped guest credential on admission. Rejo
 - **WHEN** the host or a guest receives a roster update
 - **THEN** it contains display information and connection status without other players' session credentials
 
+#### Scenario: Live connection replacement
+- **GIVEN** a guest is still connected to a lobby
+- **WHEN** a fresh connection restores with that guest's room credential
+- **THEN** the identity retains one slot, the new connection owns it, and the old connection cannot sync, replay its join receipt, acquire another identity, or mark the replacement offline on disconnect
+
+#### Scenario: Retried restoration
+- **GIVEN** a connection currently owns a restored guest session
+- **WHEN** it retries restoration with the same room credential
+- **THEN** the current safe state is returned without another revision or roster slot
+
+### Requirement: Consistent subscribed state
+The system SHALL complete room subscription before synchronously rechecking authority and capturing a current safe snapshot for admission, restoration, host binding, or state synchronization. Bound guests SHALL use their current server connection authority; bound hosts SHALL revalidate their account token and ownership. Snapshots and broadcasts SHALL carry monotonically increasing room revisions.
+
+#### Scenario: Mutation during subscription
+- **GIVEN** a client's room subscription is pending
+- **WHEN** another client mutates the roster before subscription completes
+- **THEN** the acknowledgement includes that mutation and the established subscription delivers later roster events
+
+#### Scenario: Superseded subscription
+- **GIVEN** a restoring guest is waiting for subscription
+- **WHEN** another connection successfully restores the same guest
+- **THEN** the superseded operation returns SESSION_REPLACED, removes its subscription, and cannot regain the guest's authority
+
+#### Scenario: Unauthorized state synchronization
+- **GIVEN** a connection is unbound, targets another room, has been replaced, or is a host with a revoked token
+- **WHEN** it requests state.sync
+- **THEN** it receives an authorization error without a room snapshot
+
 ### Requirement: Lobby lifecycle
 An idle lobby SHALL expire thirty minutes after creation. The owner SHALL be able to cancel it. A disconnected host SHALL have 120 seconds to reauthenticate and restore ownership before automatic cancellation. Closed rooms SHALL reject admission and explain closure to connected participants.
 

@@ -1,7 +1,9 @@
-# Guest admission and lobby rosters
+# Guest admission, restoration, and lobby rosters
 
-Implemented for [#51](https://github.com/CusmaLinux/robinhoot/issues/51),
-`add-game-lobby` tasks 2.1–2.4. Start with the authenticated
+Implemented for [#51](https://github.com/CusmaLinux/robinhoot/issues/51)
+and [#52](https://github.com/CusmaLinux/robinhoot/issues/52),
+`add-game-lobby` tasks 2.1–2.4, 3.1 and reconnect verification from 3.3.
+Start with the authenticated
 [room creation API](room-creation.md). See [architecture](../architecture/lobby-admission.md).
 This is the contract handoff for the separately maintained UI repository.
 
@@ -82,15 +84,15 @@ at capacity. Reusing that UUID with a different connection or nickname returns
 room. It cannot switch actors or acquire a second guest identity.
 
 The credential has 256 random bits, is stored as a SHA-256 verifier on its
-room/player, and is returned only in that actor's private admission acknowledgement.
+room/player, and is returned only in that actor's private admission or restore acknowledgement.
 A bounded receipt (one per guest, at most thirty per room) temporarily retains
 the secret to replay that connection's admission. Disconnect clears the receipt's
-plaintext secret while retaining the verifier. Store the returned credential
-privately for future restore support; never publish it or treat request IDs as
-reconnect credentials. Credential-bound `session.restore` and `state.sync` are
-pending [#52](https://github.com/CusmaLinux/robinhoot/issues/52); this slice cannot
-restore a guest after reload. Room credentials are never account bearer tokens.
-Rooms and credentials disappear on API process restart.
+plaintext secret while retaining the verifier. Replacement also clears that secret
+and invalidates the admitting connection's receipt. Store the returned credential
+privately; never publish it or treat request IDs as reconnect credentials.
+Room credentials are never account bearer tokens. Rooms and credentials disappear
+on API process restart. See [restoration and synchronization](lobby-restoration.md)
+for complete reconnect examples and snapshot ordering.
 
 ## Safe roster event
 
@@ -115,9 +117,11 @@ These are the complete public state fields. No account identity, socket ID,
 PIN, request ID, guest credential/verifier, quiz question, or answer key appears
 in broadcasts. A private acknowledgement never contains another player's
 credential. Treat snapshots as replacements; use `roomId` and monotonic
-`revision` to discard stale or repeated state. Every admission/disconnect
-mutation increments revision once. Failed events do not change the roster,
-revision, room subscriptions, or capacity.
+`revision` to discard stale or repeated state. Every admission, disconnect, or connection replacement increments revision once.
+Restore retries on the current connection and state.sync do not increment revision.
+Validation/authorization failures do not change membership, revision, or capacity.
+An operation superseded while awaiting subscription fails with SESSION_REPLACED;
+the later successful replacement owns the new revision and connection.
 
 ## Errors and attempt limits
 
@@ -129,21 +133,23 @@ Business and authentication failures use the acknowledgement callback:
 
 | Code | Meaning / response |
 | --- | --- |
-| `INVALID_PAYLOAD` | Non-object, missing/extra/non-string fields, malformed UUID or PIN; correct the request |
+| `INVALID_PAYLOAD` | Non-object, missing/extra/non-string fields, malformed UUID, PIN, or credential format; correct the request |
 | `INVALID_NICKNAME` | Trimmed nickname is empty or exceeds twenty code points |
 | `INVALID_PIN` | No room has this well-formed PIN |
 | `NICKNAME_TAKEN` | Another request owns that case-insensitive nickname |
 | `ROOM_FULL` | Thirty guests already joined |
 | `ROOM_CLOSED` | The located room is outside the lobby phase |
 | `JOIN_REQUEST_CONFLICT` | Receipt belongs to another connection or nickname; no secret is returned |
+| `INVALID_CREDENTIAL` | No guest in the requested room matches the credential, including an unknown room |
+| `SESSION_REPLACED` | Connection no longer owns this guest session; stop using the obsolete connection |
 | `SESSION_ALREADY_BOUND` | Connection already has an incompatible room/actor binding |
 | `ADMISSION_THROTTLED` | Attempt budget exhausted; wait for the sixty-second window to reset |
 | `UNAUTHORIZED` | Missing, invalid, expired, or revoked host token; authenticate again |
-| `FORBIDDEN` | Authenticated account does not own the requested room |
+| `FORBIDDEN` | Account does not own the room, or state.sync connection is unbound/targets another room |
 | `INTERNAL_ERROR` | Unexpected failure; no internal error details or secrets are exposed |
 
-Join attempts, including malformed payloads, failures, and successful retries,
-are limited before payload validation or room lookup: ten per connection and
+Join and restore attempts share a budget, including malformed payloads, failures,
+and successful retries. They are limited before payload validation or room lookup: ten per connection and
 sixty per source address per fixed sixty-second window. Reconnecting retains
 the source budget. Source entries expire lazily; the table holds at most 10,000
 entries and rejects new sources while full. Connection entries are removed on
@@ -153,8 +159,8 @@ identity uses the transport peer address, ignoring caller-supplied forwarded
 headers. A reverse proxy therefore shares its source budget unless a separately
 reviewed trusted-proxy policy is introduced.
 
-Only `lobby.join`, `host.bind`, and `lobby.roster` are published here. Owner
-cancellation, automatic expiry, and host absence timers remain in
+`lobby.join`, `session.restore`, `state.sync`, `host.bind`, and `lobby.roster`
+are published here. Owner cancellation, automatic expiry, and host absence timers remain in
 [#53](https://github.com/CusmaLinux/robinhoot/issues/53); no public closure command
 is introduced in this slice. The closed-room admission check is verified against
 an internal closed state. Keep one API process for live rooms. No database
@@ -167,7 +173,9 @@ real Nest HTTP server, real JWT/account validation, HTTP quiz/room creation, and
 a dedicated PostgreSQL test database. It checks host/two-guest consistency,
 authentication/foreign hosts/revocation, retained HTTP protection, exact public
 fields, private acknowledgements, independent room isolation, malformed inputs,
-retries, request-ID theft, nickname/capacity errors, throttling, and disconnects.
+retries, request-ID theft, nickname/capacity errors, throttling, disconnects,
+credential restoration, obsolete connection revocation, host sync revalidation,
+and mutations during deliberately delayed restore/sync/host subscriptions.
 Pure admission/limiter tests cover closed rooms and deterministic clock/budget
 boundaries. Database names must end in `_test`; never run against production.
 

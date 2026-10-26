@@ -38,3 +38,13 @@ export function hostInput(payload: unknown) {
     throw new LobbyError('INVALID_PAYLOAD', 'roomId must be a UUID');
   return { roomId: input.roomId.toLowerCase() };
 }
+
+export function restoreInput(payload: unknown) {
+  const input = object(payload, ['roomId', 'credential']);
+  if (!isUUID(input.roomId) || !/^[A-Za-z0-9_-]{43}$/.test(input.credential))
+    throw new LobbyError(
+      'INVALID_PAYLOAD',
+      'roomId must be a UUID and credential must be an issued guest secret',
+    );
+  return { roomId: input.roomId.toLowerCase(), credential: input.credential };
+}

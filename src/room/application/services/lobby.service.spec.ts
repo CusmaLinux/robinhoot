@@ -69,6 +69,123 @@ describe('Lobby admission', () => {
     });
     expect(JSON.stringify(result.state)).not.toContain(result.credential);
   });
+  it('revokes the original join receipt when a live session is replaced', () => {
+    const first = join();
+    lobby.restore({
+      roomId,
+      credential: first.credential,
+      connectionId: 'replacement',
+    });
+    expect(() => join()).toThrow(
+      'Join request is bound to its original connection and nickname',
+    );
+    expect(lobby.disconnect(roomId, 'socket-1')).toBeNull();
+  });
+  it('allows only the current guest connection to read a subscribed snapshot', () => {
+    const first = join();
+    lobby.restore({
+      roomId,
+      credential: first.credential,
+      connectionId: 'replacement',
+    });
+    expect(() => lobby.syncGuest(roomId, 'socket-1')).toThrow(
+      'Connection no longer owns this guest session',
+    );
+    expect(lobby.syncGuest(roomId, 'replacement')).toMatchObject({
+      revision: 2,
+      roster: [{ playerId: first.playerId }],
+    });
+  });
+  it('replays restoration on the current connection without another revision', () => {
+    const first = join();
+    const input = {
+      roomId,
+      credential: first.credential,
+      connectionId: 'replacement',
+    };
+    const restored = lobby.restore(input);
+    expect(lobby.restore(input).state).toEqual(restored.state);
+  });
+  it('rejects a foreign room credential without changing either roster', async () => {
+    const first = join();
+    const other = await rooms.create(
+      { ownerId: 'other', quizId: 'quiz', requestId: 'create' },
+      () =>
+        Promise.resolve({
+          version: 1,
+          sourceQuizId: 'quiz',
+          title: 'Quiz',
+          questions: [],
+        }),
+    );
+    expect(() =>
+      lobby.restore({
+        roomId: other.roomId,
+        credential: first.credential,
+        connectionId: 'attacker',
+      }),
+    ).toThrow('Invalid room credential');
+    expect(lobby.syncGuest(roomId, 'socket-1')).toEqual(first.state);
+    expect(lobby.bindHost(other.roomId, 'other')).toMatchObject({
+      revision: 0,
+      roster: [],
+    });
+  });
+  it('rejects restoration into a closed room', () => {
+    const first = join();
+    rooms.mutate(roomId, (room) => ({ ...room, phase: 'closed' }));
+    expect(() =>
+      lobby.restore({
+        roomId,
+        credential: first.credential,
+        connectionId: 'new',
+      }),
+    ).toThrow('Room is closed');
+  });
+  it('rejects an unknown room with the same credential failure', () => {
+    const first = join();
+    expect(() =>
+      lobby.restore({
+        roomId: 'unknown',
+        credential: first.credential,
+        connectionId: 'new',
+      }),
+    ).toThrow('Invalid room credential');
+  });
+  it('does not switch a bound connection to another guest identity', () => {
+    const first = join();
+    const bob = join({
+      nickname: 'Bob',
+      requestId: 'bob',
+      connectionId: 'bob',
+    });
+    expect(() =>
+      lobby.restore({
+        roomId,
+        credential: first.credential,
+        connectionId: 'bob',
+        boundRoomId: roomId,
+        boundPlayerId: bob.playerId,
+      }),
+    ).toThrow('Connection is already bound to a lobby actor');
+    expect(lobby.syncGuest(roomId, 'bob').revision).toBe(2);
+  });
+  it('restores a reserved slot even at thirty-player capacity', () => {
+    const first = join();
+    for (let i = 1; i < 30; i++)
+      join({
+        nickname: `Player ${i}`,
+        requestId: `request-${i}`,
+        connectionId: `socket-${i + 1}`,
+      });
+    const restored = lobby.restore({
+      roomId,
+      credential: first.credential,
+      connectionId: 'replacement',
+    });
+    expect(restored.state.roster).toHaveLength(30);
+    expect(restored.playerId).toBe(first.playerId);
+  });
   it('replays the admitting connection request without consuming a slot', () => {
     const first = join();
     expect(join()).toEqual(first);
@@ -123,5 +240,45 @@ describe('Lobby admission', () => {
       'Connection already has a guest identity',
     );
     expect(rooms.findById(roomId)?.guests).toHaveLength(1);
+  });
+});
+
+describe('Lobby restoration', () => {
+  it('restores an offline guest with its credential without adding a roster slot', async () => {
+    const rooms = new InMemoryRoomStore();
+    const room = await rooms.create(
+      { ownerId: 'owner', quizId: 'quiz', requestId: 'create' },
+      () =>
+        Promise.resolve({
+          version: 1,
+          sourceQuizId: 'quiz',
+          title: 'Quiz',
+          questions: [],
+        }),
+    );
+    const lobby = new LobbyService(rooms, new RandomGuestCredentialIssuer());
+    const first = lobby.join({
+      pin: room.pin,
+      nickname: 'Alice',
+      requestId: 'join',
+      connectionId: 'old',
+    });
+    lobby.disconnect(room.roomId, 'old');
+    const restored = lobby.restore({
+      roomId: room.roomId,
+      credential: first.credential,
+      connectionId: 'new',
+    });
+    expect(restored).toMatchObject({
+      playerId: first.playerId,
+      credential: first.credential,
+      state: {
+        revision: 3,
+        roster: [
+          { playerId: first.playerId, nickname: 'Alice', connected: true },
+        ],
+      },
+    });
+    expect(restored.state.roster).toHaveLength(1);
   });
 });
