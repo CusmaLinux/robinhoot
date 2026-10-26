@@ -1,3 +1,8 @@
+import { LIVE_QUESTION_PORT } from '../application/ports/in/live-question.use-case';
+import { QUESTION_RUNTIME_PORT } from '../application/ports/out/question-runtime.port';
+import { QUESTION_EVENTS_PORT } from '../application/ports/out/question-events.port';
+import { LiveQuestionService } from '../application/services/live-question.service';
+import { SystemQuestionRuntime } from './adapters/out/system-question.runtime';
 import type { LobbyRuntimePort } from '../application/ports/out/lobby-runtime.port';
 import { LobbyLifecycleService } from '../application/services/lobby-lifecycle.service';
 import { LOBBY_LIFECYCLE_PORT } from '../application/ports/in/lobby-lifecycle.use-case';
@@ -29,6 +34,9 @@ import { OwnedQuizSnapshotReader } from './adapters/out/owned-quiz-snapshot.read
   controllers: [RoomController],
   providers: [
     LobbyGateway,
+    { provide: LIVE_QUESTION_PORT, useClass: LiveQuestionService },
+    { provide: QUESTION_RUNTIME_PORT, useClass: SystemQuestionRuntime },
+    { provide: QUESTION_EVENTS_PORT, useExisting: SocketLobbyEvents },
     { provide: LOBBY_LIFECYCLE_PORT, useClass: LobbyLifecycleService },
     { provide: LOBBY_RUNTIME_PORT, useClass: SystemLobbyRuntime },
     SocketLobbyEvents,

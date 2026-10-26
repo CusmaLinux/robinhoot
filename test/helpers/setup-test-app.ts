@@ -1,5 +1,7 @@
 import { LOBBY_RUNTIME_PORT } from '../../src/room/application/ports/out/lobby-runtime.port';
 import type { LobbyRuntimePort } from '../../src/room/application/ports/out/lobby-runtime.port';
+import { QUESTION_RUNTIME_PORT } from '../../src/room/application/ports/out/question-runtime.port';
+import type { QuestionRuntimePort } from '../../src/room/application/ports/out/question-runtime.port';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Kysely, PostgresDialect } from 'kysely';
@@ -9,7 +11,11 @@ import { Database } from '../../src/database/database.types';
 import { TestPool } from './test-pool';
 
 export async function createTestApp(
-  options: { validation?: boolean; lobbyRuntime?: LobbyRuntimePort } = {},
+  options: {
+    validation?: boolean;
+    lobbyRuntime?: LobbyRuntimePort;
+    questionRuntime?: QuestionRuntimePort;
+  } = {},
 ): Promise<{
   app: INestApplication;
   pool: TestPool;
@@ -35,6 +41,10 @@ export async function createTestApp(
     .useValue(db);
   if (options.lobbyRuntime)
     builder.overrideProvider(LOBBY_RUNTIME_PORT).useValue(options.lobbyRuntime);
+  if (options.questionRuntime)
+    builder
+      .overrideProvider(QUESTION_RUNTIME_PORT)
+      .useValue(options.questionRuntime);
   const moduleFixture: TestingModule = await builder.compile();
 
   const app = moduleFixture.createNestApplication();

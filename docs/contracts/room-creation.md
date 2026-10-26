@@ -137,3 +137,7 @@ pointing to a dedicated database whose name ends in `_test`, plus a test-only
 `JWT_SECRET`. Apply the existing migrations, then run
 `pnpm run test:integration --runInBand room.controller.spec.ts`. Pure registry
 checks run with `pnpm run test --runInBand in-memory-room.store.spec.ts`.
+
+After a successful `host.start`, replaying the active creation receipt returns
+current metadata with `question_open` or `question_reveal` phase. It still omits
+question content and correctness; see the [live-question contract](live-question.md).

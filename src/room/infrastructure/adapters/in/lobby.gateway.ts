@@ -1,8 +1,16 @@
+import { LIVE_QUESTION_PORT } from '../../../application/ports/in/live-question.use-case';
+import type { LiveQuestionPort } from '../../../application/ports/in/live-question.use-case';
 import { LOBBY_LIFECYCLE_PORT } from '../../../application/ports/in/lobby-lifecycle.use-case';
 import type { LobbyLifecyclePort } from '../../../application/ports/in/lobby-lifecycle.use-case';
 import { SocketLobbyEvents } from '../out/socket-lobby.events';
 import { LobbyError, type LobbyState } from '../../../domain/lobby';
-import { joinInput, hostInput, restoreInput, cancelInput } from './lobby-input';
+import {
+  joinInput,
+  hostInput,
+  restoreInput,
+  cancelInput,
+  startInput,
+} from './lobby-input';
 import { AdmissionLimiter, ADMISSION_LIMITS } from './admission-limiter';
 import type { AdmissionLimits } from './admission-limiter';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/adapters/in/jwt-auth.guard';
@@ -53,6 +61,7 @@ export class LobbyGateway {
     @Inject(LOBBY_LIFECYCLE_PORT)
     private readonly lifecycle: LobbyLifecyclePort,
     private readonly events: SocketLobbyEvents,
+    @Inject(LIVE_QUESTION_PORT) private readonly live: LiveQuestionPort,
   ) {
     this.limiter = new AdmissionLimiter(limits);
   }
@@ -98,6 +107,25 @@ export class LobbyGateway {
       return this.lobby.bindHost(roomId, user.userId);
     });
     return { ok: true, data: current };
+  }
+
+  @SubscribeMessage('host.start')
+  start(
+    @ConnectedSocket() client: LobbySocket,
+    @MessageBody() payload: unknown,
+  ) {
+    const input = startInput(payload);
+    const bound = this.rooms.get(client);
+    if (!bound || bound.role !== 'host' || bound.roomId !== input.roomId)
+      throw new LobbyError('FORBIDDEN', 'Connection is not bound as this host');
+    return {
+      ok: true,
+      data: this.live.start({
+        ...input,
+        ownerId: client.data.user.userId,
+        connectionId: client.id,
+      }),
+    };
   }
 
   @SubscribeMessage('host.cancel')
@@ -225,7 +253,8 @@ export class LobbyGateway {
         );
       // The adapter subscription is complete before this synchronous authority check
       // and snapshot. Mutations during join are in the snapshot; later ones are events.
-      return read();
+      const state = read();
+      return { ...state, ...(this.live.snapshot(roomId) ?? {}) };
     } catch (error) {
       await client.leave(channel);
       throw error;

@@ -8,8 +8,8 @@ export class RoomMetadataDto implements RoomMetadata {
   @ApiProperty({ pattern: '^\\d{6}$', example: '004218' })
   pin!: string;
 
-  @ApiProperty({ enum: ['lobby'] })
-  phase!: 'lobby';
+  @ApiProperty({ enum: ['lobby', 'question_open', 'question_reveal'] })
+  phase!: RoomMetadata['phase'];
 
   @ApiProperty({ minimum: 0, example: 0 })
   revision!: number;

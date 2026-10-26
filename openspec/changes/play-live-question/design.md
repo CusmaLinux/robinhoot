@@ -33,3 +33,24 @@ Non-goals: speed bonuses, early closure when everyone answers, pause, or distrib
 ## Migration Plan
 
 No persistent migration. Extend existing room version safely in memory; cancel active rooms before deploying incompatible live-state changes. Implement start, submit, close, reveal, and reconnect one tested behavior at a time. Rollback disables start and cancels active rounds; saved quizzes are unaffected.
+
+## Predecessor reconciliation — issue #54 (2026-10-26)
+
+`add-game-lobby` was fully verified and archived as
+`2026-10-26-add-game-lobby` before this implementation; re-read the resulting
+main `game-lobby`, `quiz-authoring`, `user-auth`, and `jwt-guard` specifications.
+The existing store serializes synchronous immutable mutations, rather than an
+async queue. Reuse that atomic boundary. Host commands require current bound
+connection authority plus fresh JWT validation. Keep bounded start receipt data
+on the room, and preserve credential/current-connection rules.
+
+Issue #54 implements tasks 1.1–1.4 and the no-answer deadline portion of 3.1.
+The agreed issue contract authorizes these interfaces and one-behavior TDD
+without a separate planning approval. Use `question_open` and `question_reveal`
+wire phases, `question.opened` and `question.revealed` room events. A dedicated
+question runtime port supplies monotonic milliseconds for decisions and Unix
+milliseconds for countdown timestamps. Start cancels idle lobby expiry while
+preserving host absence/cancellation. Store one accepted start command and
+expected-revision fingerprint; retry reads current safe state without restarting.
+Answer acceptance/nonzero scoring remain #55; full active recovery acceptance
+remains #56. This change remains active until both follow-ups are verified.

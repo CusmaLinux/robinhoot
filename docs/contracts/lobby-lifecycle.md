@@ -126,3 +126,9 @@ The UI repository owns closure presentation, account reauthentication, guest
 secret disposal, reconnect handling, and monotonic event application. No UI work
 or external maintainer message is included. Full API acceptance evidence is
 recorded in the active change's tasks before a separate archival step.
+
+## Starting a question
+
+The thirty-minute expiry applies to idle lobbies. An accepted `host.start`
+cancels it; the question deadline and existing host absence/cancellation policy
+then govern play. See the [timed-question contract](live-question.md).

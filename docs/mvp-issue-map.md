@@ -21,7 +21,10 @@ OpenSpec: [proposal](../openspec/changes/archive/2026-10-24-add-quiz-authoring/p
 
 ## 2. PIN rooms and lobby sessions
 
-OpenSpec: [proposal](../openspec/changes/add-game-lobby/proposal.md), [design](../openspec/changes/add-game-lobby/design.md), [tasks](../openspec/changes/add-game-lobby/tasks.md).
+The full lobby API change is verified and archived as `2026-10-26-add-game-lobby`;
+its requirements are published in the [main lobby spec](../openspec/specs/game-lobby/spec.md).
+
+OpenSpec: [proposal](../openspec/changes/archive/2026-10-26-add-game-lobby/proposal.md), [design](../openspec/changes/archive/2026-10-26-add-game-lobby/design.md), [tasks](../openspec/changes/archive/2026-10-26-add-game-lobby/tasks.md).
 
 | Issue | Type | Task coverage | Blocked by |
 | --- | --- | --- | --- |
