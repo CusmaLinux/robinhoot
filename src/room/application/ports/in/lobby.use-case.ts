@@ -13,7 +13,19 @@ export interface Admission {
   credential: string;
   state: LobbyState;
 }
+export interface RestoreLobbyInput {
+  roomId: string;
+  credential: string;
+  connectionId: string;
+  boundRoomId?: string;
+  boundPlayerId?: string;
+}
+export interface Restoration extends Admission {
+  previousConnectionId: string | null;
+}
 export interface LobbyUseCasePort {
+  syncGuest(roomId: string, connectionId: string): LobbyState;
+  restore(input: RestoreLobbyInput): Restoration;
   disconnect(roomId: string, connectionId: string): LobbyState | null;
   bindHost(roomId: string, ownerId: string): LobbyState;
   join(input: JoinLobbyInput): Admission;

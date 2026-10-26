@@ -3,4 +3,5 @@ export const GUEST_CREDENTIAL_ISSUER_PORT = Symbol(
 );
 export interface GuestCredentialIssuerPort {
   issue(): { playerId: string; credential: string; verifier: string };
+  verify(credential: string, verifier: string): boolean;
 }

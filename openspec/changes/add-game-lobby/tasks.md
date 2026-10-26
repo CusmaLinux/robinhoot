@@ -80,9 +80,45 @@ pending for #52–#53, and this change is not ready to archive.
 
 ## 3. Restore and close the lobby
 
-- [ ] 3.1 Test credential-bound reconnect then implement atomic session subscription/state sync; verify reload retains identity and one slot while nickname/socket-ID impersonation and cross-room credentials fail.
+- [x] 3.1 Test credential-bound reconnect then implement atomic session subscription/state sync; verify reload retains identity and one slot while nickname/socket-ID impersonation and cross-room credentials fail.
 - [ ] 3.2 Test host reauthentication, replacement-connection authority, thirty-minute expiry, owner cancellation, and 120-second host absence with fake time; verify cancellation reasons and cleanup of credentials/timers/receipts.
 - [ ] 3.3 Document lifecycle/error codes and run an API host/two-guest reconnect test with real Socket.IO clients; verify room isolation, relevant suites, the API build, and architecture boundaries.
+
+Issue #52 evidence (2026-10-25): predecessor #51 is merged at `660457c`;
+re-read actual admission/receipt/store behavior and main quiz-authoring,
+user-auth, and jwt-guard specs. The full authoring predecessor is archived as
+`2026-10-24-add-quiz-authoring`. No predecessor contract change was needed.
+Credential restoration, receipt revocation, and current-connection state reads
+were verified with failing-test/minimal-implementation slices. Real independent
+Socket.IO clients verify host/two-guest reload without duplicate identity, live
+replacement, obsolete sync/join/disconnect authority, guessed/cross-room/identity-only
+rejection, malformed payloads, actor binding, retry revision stability, shared
+attempt budgets, and host token revalidation after logout. Deliberately delayed
+adapter subscriptions verify intervening roster mutations in restore/sync/host
+snapshots, subsequent event delivery, and rejection/removal of superseded pending
+subscriptions. Application tests also cover restoration at thirty-player capacity
+and closed/unknown rooms.
+
+Verification: 104 unit tests / 18 suites; 128 integration tests / four suites;
+52 e2e tests / two suites (48 real Socket.IO behaviors and four existing auth/roles
+checks). All database-backed checks used only `robinhoot_issue50_test` on loopback
+port 55450 with dedicated test-only credentials. Build, TypeScript, scoped ESLint,
+formatting, strict OpenSpec validation, and whitespace checks pass. Full read-only
+ESLint has zero errors and the same two pre-existing auth guard test warnings.
+The final advisory Fallow audit passes with no introduced dead code, complexity,
+or duplication findings after consolidating receipt/subscription/test helpers.
+Architecture direction was reviewed manually: the crypto verifier remains behind
+its application Symbol port, transport subscription/eviction stays in the gateway,
+and the domain and synchronous immutable store retain their boundaries.
+
+See [restore/sync examples and API/UI handoff](../../../docs/contracts/lobby-restoration.md),
+[updated admission contract](../../../docs/contracts/lobby-admission.md),
+[sequence/state diagrams](../../../docs/architecture/lobby-admission.md), and
+[real-client suite](../../../test/lobby.gateway.e2e-spec.ts). No production database,
+schema migration, UI implementation, or external maintainer message. Task 3.1 is
+complete and reconnect-related verification from 3.3 is recorded here. Keep
+3.2–3.3 pending for #53's lifecycle, host replacement policy, cancellation, expiry,
+and cleanup verification; do not archive this change yet.
 
 ## Workflow follow-up
 

@@ -14,6 +14,7 @@ import {
   destroyTestApp,
 } from './helpers/setup-test-app';
 import { TestPool } from './helpers/test-pool';
+import { LobbyGateway } from '../src/room/infrastructure/adapters/in/lobby.gateway';
 
 type Ack<T = Admission> =
   | { ok: true; data: T }
@@ -41,6 +42,13 @@ describe('Lobby Socket.IO transport', () => {
       client.once('connect_error', reject);
     });
     return client;
+  }
+  async function connectHost() {
+    const host = await connect({ token });
+    expect(await ack(host, 'host.bind', { roomId: room.roomId })).toMatchObject(
+      { ok: true },
+    );
+    return host;
   }
   function ack<T = Admission>(
     client: Socket,
@@ -73,6 +81,42 @@ describe('Lobby Socket.IO transport', () => {
       }
       client.once('lobby.roster', done);
     });
+  }
+  async function mutateDuringSubscription<T>(
+    client: Socket,
+    event: string,
+    payload: unknown,
+    mutate: () => Promise<unknown>,
+  ): Promise<Ack<T>> {
+    const adapter = app.get(LobbyGateway)['server'].of('/').adapter;
+    const addAll = adapter.addAll.bind(adapter) as typeof adapter.addAll;
+    let entered!: () => void;
+    let release!: () => void;
+    const subscribed = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const spy = jest
+      .spyOn(adapter, 'addAll')
+      .mockImplementation((id, channels) => {
+        if (id === client.id && channels.has(`lobby:${room.roomId}`)) {
+          entered();
+          return gate.then(() => addAll(id, channels));
+        }
+        return addAll(id, channels);
+      });
+    const response = ack<T>(client, event, payload);
+    try {
+      await subscribed;
+      await mutate();
+      release();
+      return await response;
+    } finally {
+      release();
+      spy.mockRestore();
+    }
   }
   async function loginAccount(): Promise<string> {
     const credentials = {
@@ -173,6 +217,262 @@ describe('Lobby Socket.IO transport', () => {
       ['Alice', 'Bob'],
     );
   });
+  it('restores an offline guest and broadcasts the same identity to host and second guest', async () => {
+    const host = await connectHost();
+    const alice = await connect();
+    const first = admission(await join(alice, 'Alice'));
+    const bob = await connect();
+    await join(bob, 'Bob');
+    const offline = nextState(host);
+    alice.disconnect();
+    await offline;
+    const replacement = await connect();
+    const hostState = nextState(host);
+    const bobState = nextState(bob);
+    const restored = admission(
+      await ack(replacement, 'session.restore', {
+        roomId: room.roomId,
+        credential: first.credential,
+      }),
+    );
+    expect(restored.playerId).toBe(first.playerId);
+    expect(restored.credential).toBe(first.credential);
+    expect(restored.state.roster).toHaveLength(2);
+    expect(restored.state.revision).toBe(4);
+    expect(await hostState).toEqual(restored.state);
+    expect(await bobState).toEqual(restored.state);
+  });
+  it('revokes replaced connection sync, join retries, new admissions and disconnect authority', async () => {
+    const host = await connectHost();
+    const old = await connect();
+    const requestId = randomUUID();
+    const first = admission(await join(old, 'Alice', requestId));
+    const replacement = await connect();
+    const restored = admission(
+      await ack(replacement, 'session.restore', {
+        roomId: room.roomId,
+        credential: first.credential,
+      }),
+    );
+    expect(await ack(old, 'state.sync', { roomId: room.roomId })).toMatchObject(
+      { ok: false, error: { code: 'SESSION_REPLACED' } },
+    );
+    expect(await join(old, 'Alice', requestId)).toMatchObject({
+      ok: false,
+      error: { code: 'JOIN_REQUEST_CONFLICT' },
+    });
+    expect(await join(old, 'Impostor')).toMatchObject({
+      ok: false,
+      error: { code: 'SESSION_ALREADY_BOUND' },
+    });
+    const staleMessages: LobbyState[] = [];
+    old.on('lobby.roster', (value: LobbyState) => staleMessages.push(value));
+    await join(await connect(), 'Bob');
+    expect(staleMessages).toEqual([]);
+    old.disconnect();
+    expect(
+      await ack<LobbyState>(host, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        revision: restored.state.revision + 1,
+        roster: [
+          { playerId: first.playerId, connected: true },
+          { nickname: 'Bob' },
+        ],
+      },
+    });
+    expect(
+      await ack<LobbyState>(replacement, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true });
+  });
+  it('captures a roster mutation while restore subscription is pending and receives later mutations', async () => {
+    const alice = await connect();
+    const first = admission(await join(alice, 'Alice'));
+    const replacement = await connect();
+    const restored = admission(
+      await mutateDuringSubscription<Admission>(
+        replacement,
+        'session.restore',
+        { roomId: room.roomId, credential: first.credential },
+        () => joinConnection('Bob'),
+      ),
+    );
+    expect(restored.state).toMatchObject({
+      revision: 3,
+      roster: [{ nickname: 'Alice' }, { nickname: 'Bob' }],
+    });
+    const later = nextState(replacement);
+    const carol = admission(await joinConnection('Carol'));
+    expect(await later).toEqual(carol.state);
+  });
+  async function joinConnection(nickname: string) {
+    return join(await connect(), nickname);
+  }
+  it('rejects cross-room credentials without subscribing the caller', async () => {
+    const first = admission(await join(await connect(), 'Alice'));
+    const other = await createRoom(await loginAccount());
+    const attacker = await connect();
+    expect(
+      await ack(attacker, 'session.restore', {
+        roomId: other.roomId,
+        credential: first.credential,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_CREDENTIAL' } });
+    expect(
+      await ack(attacker, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(
+      await ack(attacker, 'state.sync', { roomId: other.roomId }),
+    ).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+  });
+  it.each(['pin', 'nickname', 'socketId'] as const)(
+    'does not accept %s as a restore credential',
+    async (identity) => {
+      const alice = await connect();
+      await join(alice, 'Alice');
+      const known = { pin: room.pin, nickname: 'Alice', socketId: alice.id! };
+      const attacker = await connect();
+      expect(
+        await ack(attacker, 'session.restore', {
+          roomId: room.roomId,
+          credential: known[identity],
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+    },
+  );
+  it.each([
+    null,
+    [],
+    {},
+    { credential: 'x'.repeat(43) },
+    { roomId: 'not-uuid', credential: 'x'.repeat(43) },
+    { roomId: randomUUID(), credential: 1 },
+    {
+      roomId: randomUUID(),
+      credential: 'x'.repeat(43),
+      playerId: randomUUID(),
+    },
+  ])('rejects malformed restore payload %p', async (payload) => {
+    expect(
+      await ack(await connect(), 'session.restore', payload),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+  });
+  it('rejects a guessed valid-format credential without exposing a roster or credential', async () => {
+    const first = admission(await join(await connect(), 'Alice'));
+    const failed = await ack(await connect(), 'session.restore', {
+      roomId: room.roomId,
+      credential: 'x'.repeat(43),
+    });
+    expect(failed).toEqual({
+      ok: false,
+      error: { code: 'INVALID_CREDENTIAL', message: 'Invalid room credential' },
+    });
+    expect(JSON.stringify(failed)).not.toContain(first.credential);
+  });
+  it('keeps successful restore retries on the same revision', async () => {
+    const first = admission(await join(await connect(), 'Alice'));
+    const replacement = await connect();
+    const payload = { roomId: room.roomId, credential: first.credential };
+    const firstRestore = await ack(replacement, 'session.restore', payload);
+    expect(await ack(replacement, 'session.restore', payload)).toEqual(
+      firstRestore,
+    );
+  });
+  it('refuses to switch an existing actor to another guest or room', async () => {
+    const alice = await connect();
+    const first = admission(await join(alice, 'Alice'));
+    const bob = await connect();
+    await join(bob, 'Bob');
+    expect(
+      await ack(bob, 'session.restore', {
+        roomId: room.roomId,
+        credential: first.credential,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'SESSION_ALREADY_BOUND' } });
+    const other = await createRoom(await loginAccount());
+    const foreign = admission(
+      await join(await connect(), 'Foreign', randomUUID(), other.pin),
+    );
+    expect(
+      await ack(alice, 'session.restore', {
+        roomId: other.roomId,
+        credential: foreign.credential,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'SESSION_ALREADY_BOUND' } });
+  });
+  it('does not turn a bound host into a guest', async () => {
+    const first = admission(await join(await connect(), 'Alice'));
+    const host = await connectHost();
+    expect(
+      await ack(host, 'session.restore', {
+        roomId: room.roomId,
+        credential: first.credential,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'SESSION_ALREADY_BOUND' } });
+  });
+  it('bounds restore attempts using the shared admission budget', async () => {
+    const guest = await connect();
+    for (let i = 0; i < 10; i++) await ack(guest, 'session.restore', {});
+    expect(await join(guest, 'Alice')).toMatchObject({
+      ok: false,
+      error: { code: 'ADMISSION_THROTTLED' },
+    });
+  });
+  it('captures mutations during state.sync subscription', async () => {
+    const alice = await connect();
+    await join(alice, 'Alice');
+    const synced = await mutateDuringSubscription<LobbyState>(
+      alice,
+      'state.sync',
+      { roomId: room.roomId },
+      () => joinConnection('Bob'),
+    );
+    expect(synced).toMatchObject({
+      ok: true,
+      data: {
+        revision: 2,
+        roster: [{ nickname: 'Alice' }, { nickname: 'Bob' }],
+      },
+    });
+  });
+  it('captures mutations during host.bind subscription', async () => {
+    const host = await connect({ token });
+    const bound = await mutateDuringSubscription<LobbyState>(
+      host,
+      'host.bind',
+      { roomId: room.roomId },
+      () => joinConnection('Alice'),
+    );
+    expect(bound).toMatchObject({
+      ok: true,
+      data: { revision: 1, roster: [{ nickname: 'Alice' }] },
+    });
+  });
+  it('rechecks authority after a pending restore is superseded', async () => {
+    const first = admission(await join(await connect(), 'Alice'));
+    const pending = await connect();
+    const latest = await connect();
+    const payload = { roomId: room.roomId, credential: first.credential };
+    const result = await mutateDuringSubscription<Admission>(
+      pending,
+      'session.restore',
+      payload,
+      () => ack(latest, 'session.restore', payload),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'SESSION_REPLACED' },
+    });
+    const staleMessages: LobbyState[] = [];
+    pending.on('lobby.roster', (value: LobbyState) =>
+      staleMessages.push(value),
+    );
+    const state = nextState(latest);
+    const bob = admission(await joinConnection('Bob'));
+    expect(await state).toEqual(bob.state);
+    expect(staleMessages).toEqual([]);
+  });
   it('throttles admission attempts before resolving PINs without roster mutation', async () => {
     const guest = await connect();
     for (let i = 0; i < 10; i++)
@@ -205,8 +505,7 @@ describe('Lobby Socket.IO transport', () => {
     });
   });
   it('marks a disconnected guest offline while retaining its slot', async () => {
-    const host = await connect({ token });
-    await ack(host, 'host.bind', { roomId: room.roomId });
+    const host = await connectHost();
     const guest = await connect();
     await join(guest, 'Alice');
     const offline = nextState(host);
@@ -251,17 +550,20 @@ describe('Lobby Socket.IO transport', () => {
     });
   });
 
-  it('revalidates host tokens after logout', async () => {
-    const host = await connect({ token });
-    await ack(host, 'host.bind', { roomId: room.roomId });
-    await request(server)
-      .post('/auth/logout')
-      .auth(token, { type: 'bearer' })
-      .expect(200);
-    expect(await ack(host, 'host.bind', { roomId: room.roomId })).toMatchObject(
-      { ok: false, error: { code: 'UNAUTHORIZED' } },
-    );
-  });
+  it.each(['host.bind', 'state.sync'])(
+    'revalidates host tokens for %s after logout',
+    async (event) => {
+      const host = await connectHost();
+      await request(server)
+        .post('/auth/logout')
+        .auth(token, { type: 'bearer' })
+        .expect(200);
+      expect(await ack(host, event, { roomId: room.roomId })).toMatchObject({
+        ok: false,
+        error: { code: 'UNAUTHORIZED' },
+      });
+    },
+  );
 
   it('keeps private HTTP controllers protected after gateway installation', async () => {
     await request(server).get('/quizzes').expect(401);
@@ -306,8 +608,7 @@ describe('Lobby Socket.IO transport', () => {
   });
 
   it('rejects case-insensitive duplicate nicknames without broadcasting a roster mutation', async () => {
-    const host = await connect({ token });
-    await ack(host, 'host.bind', { roomId: room.roomId });
+    const host = await connectHost();
     const alice = await connect();
     await join(alice, 'Alice');
     const messages: LobbyState[] = [];
@@ -362,8 +663,7 @@ describe('Lobby Socket.IO transport', () => {
   });
 
   it('broadcasts only safe display identity and connection state', async () => {
-    const host = await connect({ token });
-    await ack(host, 'host.bind', { roomId: room.roomId });
+    const host = await connectHost();
     const alice = await connect();
     const first = admission(await join(alice, 'Alice'));
     const hostState = nextState(host);
@@ -401,8 +701,7 @@ describe('Lobby Socket.IO transport', () => {
     const accountToken = await loginAccount();
     const otherToken = accountToken;
     const other = await createRoom(otherToken);
-    const host = await connect({ token });
-    await ack(host, 'host.bind', { roomId: room.roomId });
+    const host = await connectHost();
     const otherHost = await connect({ token: otherToken });
     await ack(otherHost, 'host.bind', { roomId: other.roomId });
     const foreignMessages: LobbyState[] = [];
