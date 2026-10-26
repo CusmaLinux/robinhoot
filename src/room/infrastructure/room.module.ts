@@ -1,3 +1,10 @@
+import type { LobbyRuntimePort } from '../application/ports/out/lobby-runtime.port';
+import { LobbyLifecycleService } from '../application/services/lobby-lifecycle.service';
+import { LOBBY_LIFECYCLE_PORT } from '../application/ports/in/lobby-lifecycle.use-case';
+import { LOBBY_RUNTIME_PORT } from '../application/ports/out/lobby-runtime.port';
+import { LOBBY_EVENTS_PORT } from '../application/ports/out/lobby-events.port';
+import { SystemLobbyRuntime } from './adapters/out/system-lobby.runtime';
+import { SocketLobbyEvents } from './adapters/out/socket-lobby.events';
 import {
   ADMISSION_LIMITS,
   DEFAULT_ADMISSION_LIMITS,
@@ -22,6 +29,10 @@ import { OwnedQuizSnapshotReader } from './adapters/out/owned-quiz-snapshot.read
   controllers: [RoomController],
   providers: [
     LobbyGateway,
+    { provide: LOBBY_LIFECYCLE_PORT, useClass: LobbyLifecycleService },
+    { provide: LOBBY_RUNTIME_PORT, useClass: SystemLobbyRuntime },
+    SocketLobbyEvents,
+    { provide: LOBBY_EVENTS_PORT, useExisting: SocketLobbyEvents },
     { provide: ADMISSION_LIMITS, useValue: DEFAULT_ADMISSION_LIMITS },
     { provide: LOBBY_USE_CASE_PORT, useClass: LobbyService },
     {
@@ -29,7 +40,12 @@ import { OwnedQuizSnapshotReader } from './adapters/out/owned-quiz-snapshot.read
       useClass: RandomGuestCredentialIssuer,
     },
     { provide: CREATE_ROOM_USE_CASE_PORT, useClass: CreateRoomService },
-    { provide: ROOM_STORE_PORT, useFactory: () => new InMemoryRoomStore() },
+    {
+      provide: ROOM_STORE_PORT,
+      inject: [LOBBY_RUNTIME_PORT],
+      useFactory: (runtime: LobbyRuntimePort) =>
+        new InMemoryRoomStore(undefined, () => runtime.now()),
+    },
     { provide: QUIZ_SNAPSHOT_READER_PORT, useClass: OwnedQuizSnapshotReader },
   ],
 })

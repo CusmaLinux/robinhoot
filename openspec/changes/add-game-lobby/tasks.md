@@ -81,8 +81,8 @@ pending for #52–#53, and this change is not ready to archive.
 ## 3. Restore and close the lobby
 
 - [x] 3.1 Test credential-bound reconnect then implement atomic session subscription/state sync; verify reload retains identity and one slot while nickname/socket-ID impersonation and cross-room credentials fail.
-- [ ] 3.2 Test host reauthentication, replacement-connection authority, thirty-minute expiry, owner cancellation, and 120-second host absence with fake time; verify cancellation reasons and cleanup of credentials/timers/receipts.
-- [ ] 3.3 Document lifecycle/error codes and run an API host/two-guest reconnect test with real Socket.IO clients; verify room isolation, relevant suites, the API build, and architecture boundaries.
+- [x] 3.2 Test host reauthentication, replacement-connection authority, thirty-minute expiry, owner cancellation, and 120-second host absence with fake time; verify cancellation reasons and cleanup of credentials/timers/receipts.
+- [x] 3.3 Document lifecycle/error codes and run an API host/two-guest reconnect test with real Socket.IO clients; verify room isolation, relevant suites, the API build, and architecture boundaries.
 
 Issue #52 evidence (2026-10-25): predecessor #51 is merged at `660457c`;
 re-read actual admission/receipt/store behavior and main quiz-authoring,
@@ -119,6 +119,46 @@ schema migration, UI implementation, or external maintainer message. Task 3.1 is
 complete and reconnect-related verification from 3.3 is recorded here. Keep
 3.2–3.3 pending for #53's lifecycle, host replacement policy, cancellation, expiry,
 and cleanup verification; do not archive this change yet.
+
+Issue #53 evidence (2026-10-25): predecessor #52 merged at `50d6e7f`;
+re-read actual restoration/admission/store and authentication behavior, main
+quiz-authoring/user-auth/jwt-guard specs, and the archived authoring predecessor.
+No predecessor contract changes were needed. The full lobby API acceptance is
+now verified: owned immutable creation, safe bounded admission, credential-bound
+restoration/current-connection authority, consistent subscribed snapshots, owner
+cancellation, creation-based thirty-minute expiry, and the 120-second host return
+window. Closure removes the live aggregate, all room credentials/admission and
+creation receipts, owner/PIN indexes, both timers, and channel subscriptions.
+
+Lifecycle behaviors were developed with failing-test/minimal-implementation
+slices, then exercised with production timers under fake time and real independent
+Socket.IO clients. Tests cover original closure retry/revision, malformed commands,
+guest/foreign/revoked-token denial, timely return with existing roster, replaced
+host sync/cancel/disconnect denial, return/admission at exact deadlines even before
+callback dispatch, earliest terminal reason, repeated/stale callbacks, same-owner
+and PIN replacement-room safety, tombstone expiry/cap, shutdown, isolation, and
+closure/supersession during deliberately delayed subscriptions.
+
+Verification: 117 unit tests / 19 suites; 128 integration tests / four suites;
+65 e2e tests / two suites (61 real Socket.IO behaviors plus four auth/roles tests).
+Database-backed checks used only `robinhoot_issue50_test`, loopback port 55450,
+and test-only credentials. The room runtime port controls lifecycle time in
+transport tests while real TCP, JWT, database validation, and HTTP creation run
+normally. Build, TypeScript, formatting, strict OpenSpec validation, and whitespace
+checks pass. Full read-only ESLint has no errors and the same two pre-existing
+auth-test warnings. Advisory Fallow audit passes with zero dead-code, complexity, or duplication
+findings. Automatic architecture boundaries are not configured; dependency
+direction was reviewed manually. Application/domain import no transport
+or timer implementations; runtime/events/lifecycle ports use Symbol DI bindings.
+
+See [lifecycle contract and UI handoff](../../../docs/contracts/lobby-lifecycle.md),
+[updated architecture](../../../docs/architecture/lobby-admission.md),
+[fake-time lifecycle suite](../../../src/room/application/services/lobby-lifecycle.service.spec.ts),
+and [real-client acceptance suite](../../../test/lobby.gateway.e2e-spec.ts).
+Tasks 3.2–3.3 are complete. All API acceptance evidence and contract examples are
+recorded before archival; review this focused PR before the separate archival/main
+spec synchronization step. No production database, schema migration, deployment,
+UI implementation, or external maintainer message.
 
 ## Workflow follow-up
 

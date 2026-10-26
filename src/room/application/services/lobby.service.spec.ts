@@ -1,3 +1,4 @@
+import { LobbyLifecycleService } from './lobby-lifecycle.service';
 import { InMemoryRoomStore } from '../../infrastructure/adapters/out/in-memory-room.store';
 import { LobbyService } from './lobby.service';
 import { RandomGuestCredentialIssuer } from '../../infrastructure/adapters/out/random-guest-credential.issuer';
@@ -29,7 +30,15 @@ describe('Lobby admission', () => {
     );
     pin = room.pin;
     roomId = room.roomId;
-    lobby = new LobbyService(rooms, new RandomGuestCredentialIssuer());
+    lobby = new LobbyService(
+      rooms,
+      new RandomGuestCredentialIssuer(),
+      new LobbyLifecycleService(
+        rooms,
+        { now: () => Date.now(), schedule: () => () => {} },
+        { closed: () => {} },
+      ),
+    );
   });
   it('admits a guest with a private room-scoped session and safe roster', async () => {
     const rooms = new InMemoryRoomStore();
@@ -43,7 +52,15 @@ describe('Lobby admission', () => {
           questions: [],
         }),
     );
-    const lobby = new LobbyService(rooms, new RandomGuestCredentialIssuer());
+    const lobby = new LobbyService(
+      rooms,
+      new RandomGuestCredentialIssuer(),
+      new LobbyLifecycleService(
+        rooms,
+        { now: () => Date.now(), schedule: () => () => {} },
+        { closed: () => {} },
+      ),
+    );
     const result = lobby.join({
       pin: room.pin,
       nickname: '  Alice  ',
@@ -256,7 +273,15 @@ describe('Lobby restoration', () => {
           questions: [],
         }),
     );
-    const lobby = new LobbyService(rooms, new RandomGuestCredentialIssuer());
+    const lobby = new LobbyService(
+      rooms,
+      new RandomGuestCredentialIssuer(),
+      new LobbyLifecycleService(
+        rooms,
+        { now: () => Date.now(), schedule: () => () => {} },
+        { closed: () => {} },
+      ),
+    );
     const first = lobby.join({
       pin: room.pin,
       nickname: 'Alice',

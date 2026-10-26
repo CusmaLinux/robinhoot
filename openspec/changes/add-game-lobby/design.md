@@ -88,6 +88,36 @@ and [sequence/state diagrams](../../../docs/architecture/lobby-admission.md).
 Lifecycle timers, host replacement policy, cancellation, and closure cleanup
 remain #53. This change stays active.
 
+Issue #53 contract review (2026-10-25): #52 is merged at `50d6e7f`.
+Re-read the actual admission/restoration/store/authentication code, current main
+quiz-authoring/user-auth/jwt-guard specifications, and the archived authoring
+predecessor (`2026-10-24-add-quiz-authoring`). No predecessor contract adjustment
+was needed. The issue's agreed API contract and test priorities authorize the
+implementation and one-behavior TDD slices without a new planning approval.
+
+Issue #53 decisions: `host.cancel {roomId,commandId}` requires a fresh account
+validation, current room ownership, and the current bound host connection.
+`host.bind` replaces the prior host connection, removes its subscription, and
+rechecks authority after subscription; `state.sync` never rebinds an obsolete
+host. The 120-second timer starts on current bound-host disconnect, not HTTP
+creation; an unbound new room still expires thirty minutes after creation.
+Return strictly before the deadline preserves the roster and does not extend
+creation expiry. Server timestamps and deadlines share the runtime clock port.
+Deadline checks on reads/binds enforce expiry even with delayed callbacks; the
+earlier deadline wins, with creation expiry winning a tie.
+
+A single closure increments revision, removes the aggregate/owner/PIN indexes
+and all credentials/receipts, cancels both timers, publishes `lobby.closed`
+with `OWNER_CANCELLED`, `LOBBY_EXPIRED`, or `HOST_TIMEOUT`, then removes channel
+subscriptions. A five-minute, maximum-1,000-entry tombstone retains only owner,
+closure, and retention deadline. Owner cancellation retries return that terminal
+outcome without a separate command receipt; all command IDs converge on the
+same closed outcome. Old room/absence callbacks cannot affect replacements.
+See [lifecycle examples and UI handoff](../../../docs/contracts/lobby-lifecycle.md)
+and [updated sequence/state diagrams](../../../docs/architecture/lobby-admission.md).
+The complete API evidence is recorded in tasks.md before archival. Archival is
+a separate review step; no UI implementation is required for API acceptance.
+
 1. Add a live-game application boundary with RoomStore, QuizSnapshotReader, Clock, Scheduler, and CredentialIssuer ports as needed by tested behaviors. Use Symbol DI tokens and infrastructure adapters. Read an owned, validated quiz once when creating the room and deep-copy a versioned snapshot; do not re-read mutable quiz content during play.
 2. Use a single-process in-memory room registry and per-room serialized mutations. Guard room creation per owner across any awaited quiz lookup to enforce one active room. Generate six-digit PINs including leading zeros with a collision check; retry boundedly and fail gracefully if allocation fails. Never overwrite an active PIN.
 3. POST /rooms accepts quizId under account authentication and returns owner-safe room metadata and PIN. Use request IDs for retriable room creation; retain a bounded creation receipt while the room exists so a lost acknowledgement does not cause a second room. Invalid quiz returns 400; foreign quiz returns 404; another active room returns 409.

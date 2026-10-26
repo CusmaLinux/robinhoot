@@ -8,6 +8,7 @@ export interface RoomStorePort {
     input: CreateRoomInput,
     loadSnapshot: () => Promise<QuizSnapshot>,
   ): Promise<Room>;
+  remove(roomId: string): void;
   mutate(roomId: string, change: (room: Room) => Room): Room;
   findById(roomId: string): Room | null;
   findByPin(pin: string): Room | null;

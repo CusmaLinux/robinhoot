@@ -1,3 +1,5 @@
+import type { LobbyRuntimePort } from '../src/room/application/ports/out/lobby-runtime.port';
+
 import { INestApplication } from '@nestjs/common';
 import { Kysely } from 'kysely';
 import { Server } from 'http';
@@ -16,12 +18,37 @@ import {
 import { TestPool } from './helpers/test-pool';
 import { LobbyGateway } from '../src/room/infrastructure/adapters/in/lobby.gateway';
 
+// Advances only room time; real TCP, authentication and Socket.IO keep running.
+class ManualLobbyRuntime implements LobbyRuntimePort {
+  private time = Date.now();
+  private readonly pending = new Map<() => void, number>();
+  now(): number {
+    return this.time;
+  }
+  schedule(at: number, callback: () => void): () => void {
+    this.pending.set(callback, at);
+    return () => {
+      this.pending.delete(callback);
+    };
+  }
+  advance(milliseconds: number): void {
+    this.time += milliseconds;
+    for (const [callback, at] of this.pending) {
+      if (at <= this.time) {
+        this.pending.delete(callback);
+        callback();
+      }
+    }
+  }
+}
+
 type Ack<T = Admission> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string } };
 
 describe('Lobby Socket.IO transport', () => {
   let app: INestApplication;
+  let runtime: ManualLobbyRuntime;
   let db: Kysely<Database>;
   let pool: TestPool;
   let server: Server;
@@ -49,6 +76,16 @@ describe('Lobby Socket.IO transport', () => {
       { ok: true },
     );
     return host;
+  }
+  async function disconnectHost(host: Socket): Promise<void> {
+    const disconnected = new Promise<void>((resolve) =>
+      app
+        .get(LobbyGateway)
+        ['server'].sockets.sockets.get(host.id!)!
+        .once('disconnect', () => resolve()),
+    );
+    host.disconnect();
+    await disconnected;
   }
   function ack<T = Admission>(
     client: Socket,
@@ -168,7 +205,11 @@ describe('Lobby Socket.IO transport', () => {
   beforeEach(async () => {
     if (!process.env.DB_NAME?.endsWith('_test'))
       throw new Error('Dedicated test database required');
-    ({ app, db, pool } = await createTestApp({ validation: true }));
+    runtime = new ManualLobbyRuntime();
+    ({ app, db, pool } = await createTestApp({
+      validation: true,
+      lobbyRuntime: runtime,
+    }));
     await app.listen(0, '127.0.0.1');
     server = app.getHttpServer() as Server;
     const address = server.address();
@@ -184,6 +225,255 @@ describe('Lobby Socket.IO transport', () => {
     clients.splice(0).forEach((client) => client.disconnect());
     await rollbackTransaction(pool);
     if (app) await destroyTestApp(app, db);
+  });
+
+  it('retains the roster on host return within 120 seconds', async () => {
+    const host = await connectHost();
+    const a = await connect();
+    const b = await connect();
+    const first = admission(await join(a, 'Alice'));
+    await join(b, 'Bob');
+    await disconnectHost(host);
+    runtime.advance(119_999);
+    const returned = await connectHost();
+    const synced = await ack<LobbyState>(returned, 'state.sync', {
+      roomId: room.roomId,
+    });
+    expect(synced).toMatchObject({
+      ok: true,
+      data: {
+        roster: [
+          { playerId: first.playerId, nickname: 'Alice' },
+          { nickname: 'Bob' },
+        ],
+      },
+    });
+    runtime.advance(1);
+    expect(
+      await ack(returned, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('broadcasts host timeout to waiting guests and isolates other rooms', async () => {
+    const host = await connectHost();
+    const a = await connect();
+    const b = await connect();
+    await join(a, 'Alice');
+    await join(b, 'Bob');
+    const foreignToken = await loginAccount();
+    const other = await createRoom(foreignToken);
+    const foreign = await connect({ token: foreignToken });
+    await ack(foreign, 'host.bind', { roomId: other.roomId });
+    const leaked = jest.fn();
+    foreign.on('lobby.closed', leaked);
+    const closed = [a, b].map(
+      (client) =>
+        new Promise((resolve) => client.once('lobby.closed', resolve)),
+    );
+    await disconnectHost(host);
+    runtime.advance(120_000);
+    expect(await Promise.all(closed)).toEqual([
+      expect.objectContaining({ reason: 'HOST_TIMEOUT' }),
+      expect.objectContaining({ reason: 'HOST_TIMEOUT' }),
+    ]);
+    expect(
+      await ack(foreign, 'state.sync', { roomId: other.roomId }),
+    ).toMatchObject({ ok: true });
+    expect(leaked).not.toHaveBeenCalled();
+    const returning = await connect({ token });
+    expect(
+      await ack(returning, 'host.bind', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_CLOSED', message: 'HOST_TIMEOUT' },
+    });
+  });
+
+  it('publishes expiry once and removes channel subscriptions', async () => {
+    const host = await connectHost();
+    const guest = await connect();
+    await join(guest, 'Alice');
+    const observed: unknown[] = [];
+    guest.on('lobby.closed', (value) => observed.push(value));
+    const closed = new Promise((resolve) =>
+      guest.once('lobby.closed', resolve),
+    );
+    runtime.advance(30 * 60_000);
+    expect(await closed).toMatchObject({
+      roomId: room.roomId,
+      reason: 'LOBBY_EXPIRED',
+      revision: 2,
+    });
+    runtime.advance(30 * 60_000);
+    expect(observed).toHaveLength(1);
+    expect(
+      app
+        .get(LobbyGateway)
+        ['server'].sockets.adapter.rooms.has(`lobby:${room.roomId}`),
+    ).toBe(false);
+    expect(host.connected).toBe(true);
+  });
+
+  it('rejects cancellation by guests and foreign authenticated accounts', async () => {
+    const host = await connectHost();
+    const guest = await connect();
+    await join(guest, 'Alice');
+    const payload = { roomId: room.roomId, commandId: randomUUID() };
+    expect(await ack(guest, 'host.cancel', payload)).toMatchObject({
+      ok: false,
+      error: { code: 'UNAUTHORIZED' },
+    });
+    const foreign = await connect({ token: await loginAccount() });
+    expect(await ack(foreign, 'host.cancel', payload)).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(
+      await ack(foreign, 'host.bind', { roomId: room.roomId }),
+    ).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+    expect(
+      await ack(host, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('revokes cancellation and sync authority from a replaced host', async () => {
+    const old = await connectHost();
+    const current = await connectHost();
+    expect(
+      await ack(old, 'host.cancel', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'SESSION_REPLACED' } });
+    expect(await ack(old, 'state.sync', { roomId: room.roomId })).toMatchObject(
+      { ok: false, error: { code: 'SESSION_REPLACED' } },
+    );
+    old.disconnect();
+    runtime.advance(120_000);
+    expect(
+      await ack(current, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('revalidates the owner token on cancellation and return after logout', async () => {
+    const host = await connectHost();
+    await request(server)
+      .post('/auth/logout')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(
+      await ack(host, 'host.cancel', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+    const returning = await connect({ token });
+    expect(
+      await ack(returning, 'host.bind', { roomId: room.roomId }),
+    ).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+  });
+
+  it('rejects an obsolete host while its subscription is still pending', async () => {
+    const pending = await connect({ token });
+    let current!: Socket;
+    const result = await mutateDuringSubscription(
+      pending,
+      'host.bind',
+      { roomId: room.roomId },
+      async () => {
+        current = await connectHost();
+      },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'SESSION_REPLACED' },
+    });
+    expect(
+      app
+        .get(LobbyGateway)
+        ['server'].sockets.adapter.rooms.get(`lobby:${room.roomId}`)
+        ?.has(pending.id!),
+    ).toBe(false);
+    expect(
+      await ack(current, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('returns the closure outcome when a guest subscription finishes after cancellation', async () => {
+    const host = await connectHost();
+    const guest = await connect();
+    const result = await mutateDuringSubscription(
+      guest,
+      'lobby.join',
+      { pin: room.pin, nickname: 'Alice', requestId: randomUUID() },
+      () =>
+        ack(host, 'host.cancel', {
+          roomId: room.roomId,
+          commandId: randomUUID(),
+        }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_CLOSED', message: 'OWNER_CANCELLED' },
+    });
+    expect(
+      app
+        .get(LobbyGateway)
+        ['server'].sockets.adapter.rooms.has(`lobby:${room.roomId}`),
+    ).toBe(false);
+  });
+
+  it.each([
+    {},
+    { roomId: 'bad', commandId: randomUUID() },
+    { commandId: 'bad' },
+    { commandId: randomUUID(), ownerId: 'injected' },
+  ])('rejects malformed host cancellation payload %j', async (payload) => {
+    const host = await connectHost();
+    expect(
+      await ack(host, 'host.cancel', { roomId: room.roomId, ...payload }),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+    expect(
+      await ack(host, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it('broadcasts owner cancellation to the host and two guests and rejects later admission', async () => {
+    const host = await connectHost();
+    const a = await connect();
+    const b = await connect();
+    const session = admission(await join(a, 'Alice'));
+    await join(b, 'Bob');
+    const closures = [host, a, b].map(
+      (client) =>
+        new Promise((resolve) => client.once('lobby.closed', resolve)),
+    );
+    const payload = { roomId: room.roomId, commandId: randomUUID() };
+    const result = await ack(host, 'host.cancel', payload);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { roomId: room.roomId, phase: 'closed', reason: 'OWNER_CANCELLED' },
+    });
+    expect(await Promise.all(closures)).toEqual([
+      expect.objectContaining({ reason: 'OWNER_CANCELLED' }),
+      expect.objectContaining({ reason: 'OWNER_CANCELLED' }),
+      expect.objectContaining({ reason: 'OWNER_CANCELLED' }),
+    ]);
+    expect(await ack(host, 'host.cancel', payload)).toEqual(result);
+    const fresh = await connect();
+    expect(await join(fresh, 'Later')).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_PIN' },
+    });
+    expect(
+      await ack(fresh, 'session.restore', {
+        roomId: room.roomId,
+        credential: session.credential,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_CLOSED', message: 'OWNER_CANCELLED' },
+    });
   });
 
   it('admits an unauthenticated guest with a private acknowledgement', async () => {

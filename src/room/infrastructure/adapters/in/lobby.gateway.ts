@@ -1,5 +1,8 @@
+import { LOBBY_LIFECYCLE_PORT } from '../../../application/ports/in/lobby-lifecycle.use-case';
+import type { LobbyLifecyclePort } from '../../../application/ports/in/lobby-lifecycle.use-case';
+import { SocketLobbyEvents } from '../out/socket-lobby.events';
 import { LobbyError, type LobbyState } from '../../../domain/lobby';
-import { joinInput, hostInput, restoreInput } from './lobby-input';
+import { joinInput, hostInput, restoreInput, cancelInput } from './lobby-input';
 import { AdmissionLimiter, ADMISSION_LIMITS } from './admission-limiter';
 import type { AdmissionLimits } from './admission-limiter';
 import { JwtAuthGuard } from '../../../../auth/infrastructure/adapters/in/jwt-auth.guard';
@@ -47,14 +50,22 @@ export class LobbyGateway {
     @Inject(ADMISSION_LIMITS) limits: AdmissionLimits,
     @Inject(VALIDATE_TOKEN_USE_CASE_PORT)
     private readonly validateToken: ValidateTokenUseCasePort,
+    @Inject(LOBBY_LIFECYCLE_PORT)
+    private readonly lifecycle: LobbyLifecyclePort,
+    private readonly events: SocketLobbyEvents,
   ) {
     this.limiter = new AdmissionLimiter(limits);
+  }
+
+  afterInit(server: Server) {
+    this.events.attach(server);
   }
 
   handleDisconnect(client: LobbySocket) {
     this.limiter.release(client.id);
     const roomId = this.rooms.get(client)?.roomId;
     if (roomId) {
+      this.lifecycle.disconnect(roomId, client.id);
       const state = this.lobby.disconnect(roomId, client.id);
       if (state) this.server.to(`lobby:${roomId}`).emit('lobby.roster', state);
     }
@@ -78,11 +89,30 @@ export class LobbyGateway {
     const user = client.data.user;
     const roomId = hostInput(payload).roomId;
     this.lobby.bindHost(roomId, user.userId);
+    const previous = this.lifecycle.bind(roomId, user.userId, client.id);
     this.rooms.set(client, { roomId, role: 'host' });
-    const current = await this.subscribeSnapshot(client, roomId, () =>
-      this.lobby.bindHost(roomId, user.userId),
-    );
+    if (previous && previous !== client.id)
+      await this.server.sockets.sockets.get(previous)?.leave(`lobby:${roomId}`);
+    const current = await this.subscribeSnapshot(client, roomId, () => {
+      this.lifecycle.assertHost(roomId, user.userId, client.id);
+      return this.lobby.bindHost(roomId, user.userId);
+    });
     return { ok: true, data: current };
+  }
+
+  @SubscribeMessage('host.cancel')
+  cancel(
+    @ConnectedSocket() client: LobbySocket,
+    @MessageBody() payload: unknown,
+  ) {
+    const { roomId } = cancelInput(payload);
+    const bound = this.rooms.get(client);
+    if (!bound || bound.role !== 'host' || bound.roomId !== roomId)
+      throw new LobbyError('FORBIDDEN', 'Connection is not bound as this host');
+    return {
+      ok: true,
+      data: this.lifecycle.cancel(roomId, client.data.user.userId, client.id),
+    };
   }
 
   @Public()
@@ -161,10 +191,12 @@ export class LobbyGateway {
         throw new UnauthorizedException();
       ownerId = (await this.validateToken.execute(token)).userId;
     }
-    const read = () =>
-      ownerId
+    const read = () => {
+      if (ownerId) this.lifecycle.assertHost(roomId, ownerId, client.id);
+      return ownerId
         ? this.lobby.bindHost(roomId, ownerId)
         : this.lobby.syncGuest(roomId, client.id);
+    };
     read();
     const current = await this.subscribeSnapshot(client, roomId, read);
     return { ok: true, data: current };

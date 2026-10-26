@@ -49,10 +49,10 @@ credentials and unknown rooms return the same failure without roster data:
 ```
 
 Wrong shapes, extra/non-string fields, invalid UUIDs, or a malformed credential
-return `INVALID_PAYLOAD`. UUIDs are normalized to lowercase. A matching credential
-for an internally closed room returns `ROOM_CLOSED`. A bound actor switch returns
+return `INVALID_PAYLOAD`. UUIDs are normalized to lowercase. A recently closed room returns `ROOM_CLOSED` with its terminal reason while the
+bounded closure tombstone exists; no credential can restore it. A bound actor switch returns
 `SESSION_ALREADY_BOUND`. Join and restore share the admission attempt limits.
-Room closure reasons, credential cleanup, expiry, and host absence remain #53;
+See [closure and host return](lobby-lifecycle.md) for closure reasons, credential cleanup, expiry, and host absence;
 process restart currently loses all rooms and makes old credentials invalid.
 
 ## Bound state synchronization

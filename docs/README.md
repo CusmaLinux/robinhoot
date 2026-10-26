@@ -4,6 +4,9 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [Lobby closure and host return](contracts/lobby-lifecycle.md): owner cancellation, thirty-minute expiry, 120-second host return, replacement authority, closure reasons, and cleanup.
+- [Guest restoration](contracts/lobby-restoration.md): room-scoped reconnect credentials and consistent subscribed snapshots.
+
 - [Guest admission and roster contract](contracts/lobby-admission.md): Socket.IO host authentication, private guest sessions, safe rosters, limits, retries, and errors.
 - [Lobby admission architecture](architecture/lobby-admission.md): transport authorization, atomic membership, session boundaries, and admission sequence/state.
 

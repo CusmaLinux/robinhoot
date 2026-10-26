@@ -113,8 +113,7 @@ entries; connection budgets are released on disconnect. Source headers are not
 trusted. No timer or database account is created for a guest.
 
 Lifecycle cleanup, owner cancellation, host absence, and automatic closure
-remain #53. Process restart loses live state. This
-implementation does not claim full lobby-change completion or archival.
+are implemented below under #53. Process restart loses live state.
 
 
 ## Credential restoration sequence
@@ -155,3 +154,64 @@ The room registry still uses its existing synchronous, immutable mutation path;
 no database migration, async persistence, queue, or distributed room guarantee
 is introduced. Concurrent credential holders resolve to the most recent successful
 binding; an operation must recheck that binding after awaiting subscription.
+
+## Lobby lifecycle (#53)
+
+See [closure and host return contract](../contracts/lobby-lifecycle.md).
+CreateRoomService registers the immutable creation deadline through
+`LobbyLifecyclePort`; store timestamps and deadlines share `LobbyRuntimePort`.
+LobbyService checks deadlines before admission/restoration/snapshot reads.
+LobbyLifecycleService owns current host authority, absence generations, terminal
+transitions, and bounded tombstones. Its outbound dependencies are RoomStorePort,
+LobbyRuntimePort (clock/scheduler), and LobbyEventsPort. RoomModule binds them with
+Symbols to the in-memory registry, system timer, and Socket.IO event adapters.
+The gateway attaches its initialized server to the event adapter. Application and
+domain code import no Socket.IO, Node timer, or crypto implementation.
+
+```mermaid
+sequenceDiagram
+  participant Host
+  participant Gateway
+  participant Auth as Account validator
+  participant Lifecycle
+  participant Store
+  participant Guests
+  Host->>Gateway: Disconnect current host
+  Gateway->>Lifecycle: Start 120-second absence generation
+  alt Owner returns before deadline
+    Host->>Gateway: host.bind(roomId), current JWT
+    Gateway->>Auth: Validate account and token version
+    Gateway->>Lifecycle: Check owner/deadlines, replace current connection
+    Lifecycle->>Lifecycle: Cancel absence generation
+    Gateway-->>Host: Subscribed current roster
+  else Absence or creation deadline reached
+    Lifecycle->>Lifecycle: Select earliest deadline and close once
+    Lifecycle->>Store: Remove room, credentials, receipts, owner and PIN
+    Lifecycle->>Lifecycle: Cancel timers; retain bounded closure tombstone
+    Lifecycle-->>Guests: lobby.closed with reason and next revision
+    Lifecycle->>Gateway: Remove room channel subscriptions
+  end
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> WaitingForFirstHost: HTTP creation starts thirty-minute expiry
+  WaitingForFirstHost --> HostConnected: Authenticated owner binds
+  HostConnected --> HostConnected: Authorized replacement revokes old host
+  HostConnected --> HostAbsent: Current host disconnects
+  HostAbsent --> HostConnected: Same owner returns before 120 seconds
+  HostAbsent --> Closed: 120-second absence / HOST_TIMEOUT
+  WaitingForFirstHost --> Closed: Thirty minutes / LOBBY_EXPIRED
+  HostConnected --> Closed: Thirty minutes / LOBBY_EXPIRED
+  HostAbsent --> Closed: Thirty minutes reached first / LOBBY_EXPIRED
+  HostConnected --> Closed: Owner host.cancel / OWNER_CANCELLED
+  Closed --> [*]: Resources removed; bounded tombstone expires
+```
+
+Repeated callbacks check room and absence-generation identity and cannot mutate
+a replacement room. Current authority is rechecked after awaited subscription;
+a pending obsolete host cannot replace a newer binding. Closure during pending
+subscription fails the acknowledgement with the terminal reason and removes the
+late subscription. The event adapter emits to the room before clearing its
+channel, and tombstones cover clients that missed the live event. Process restart
+still loses all live state. No distributed ordering or durable delivery is claimed.

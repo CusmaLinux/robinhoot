@@ -138,10 +138,10 @@ Business and authentication failures use the acknowledgement callback:
 | `INVALID_PIN` | No room has this well-formed PIN |
 | `NICKNAME_TAKEN` | Another request owns that case-insensitive nickname |
 | `ROOM_FULL` | Thirty guests already joined |
-| `ROOM_CLOSED` | The located room is outside the lobby phase |
+| `ROOM_CLOSED` | Room is closed; a retained tombstone supplies the lifecycle reason |
 | `JOIN_REQUEST_CONFLICT` | Receipt belongs to another connection or nickname; no secret is returned |
 | `INVALID_CREDENTIAL` | No guest in the requested room matches the credential, including an unknown room |
-| `SESSION_REPLACED` | Connection no longer owns this guest session; stop using the obsolete connection |
+| `SESSION_REPLACED` | Connection no longer owns this guest session or host control; stop using the obsolete connection |
 | `SESSION_ALREADY_BOUND` | Connection already has an incompatible room/actor binding |
 | `ADMISSION_THROTTLED` | Attempt budget exhausted; wait for the sixty-second window to reset |
 | `UNAUTHORIZED` | Missing, invalid, expired, or revoked host token; authenticate again |
@@ -160,11 +160,10 @@ headers. A reverse proxy therefore shares its source budget unless a separately
 reviewed trusted-proxy policy is introduced.
 
 `lobby.join`, `session.restore`, `state.sync`, `host.bind`, and `lobby.roster`
-are published here. Owner cancellation, automatic expiry, and host absence timers remain in
-[#53](https://github.com/CusmaLinux/robinhoot/issues/53); no public closure command
-is introduced in this slice. The closed-room admission check is verified against
-an internal closed state. Keep one API process for live rooms. No database
-migration or UI implementation is included, and the OpenSpec change remains active.
+are published here. See [lifecycle](lobby-lifecycle.md) for `host.cancel`,
+`lobby.closed`, automatic expiry, host replacement, and the 120-second return
+window implemented by #53. Keep one API process for live rooms. No database
+migration or UI implementation is included.
 
 ## Verification
 
