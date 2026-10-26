@@ -1,3 +1,4 @@
+import type { LiveRound } from './live-question';
 import type { Guest } from './lobby';
 export interface QuizSnapshot {
   readonly version: 1;
@@ -16,12 +17,13 @@ export interface QuizSnapshot {
 export interface RoomMetadata {
   readonly roomId: string;
   readonly pin: string;
-  readonly phase: 'lobby' | 'closed';
+  readonly phase: 'lobby' | 'closed' | 'question_open' | 'question_reveal';
   readonly revision: number;
   readonly createdAt: string;
 }
 
 export interface Room extends RoomMetadata {
+  readonly round?: LiveRound;
   readonly guests: readonly Guest[];
   readonly host: { readonly ownerId: string };
   readonly creationRequestId: string;

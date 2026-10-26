@@ -6,7 +6,7 @@ Apply only after add-quiz-authoring is implemented and archived. Re-read its mai
 
 ## Goals / Non-Goals
 
-Repository boundary: this is an API-only change. The existing UI is an external consumer maintained in another repository. See [API/UI boundary](../../../docs/api-ui-boundary.md) for contract handoff and completion responsibilities.
+Repository boundary: this is an API-only change. The existing UI is an external consumer maintained in another repository. See [API/UI boundary](../../../../docs/api-ui-boundary.md) for contract handoff and completion responsibilities.
 
 Goals: an isolated owned lobby with secure guest identity and clear admission feedback.
 Non-goals: starting rounds, student accounts, durable live state, horizontal scaling, or Redis.
@@ -32,8 +32,8 @@ An owner with another active request receives 409 `OWNER_HAS_ACTIVE_ROOM`.
 PIN allocation tries at most 32 candidates before 503
 `PIN_ALLOCATION_EXHAUSTED`. All failures release the owner reservation. Internal
 host binding is `{ownerId}` from the verified account; no host secret or quiz
-content is returned. See the [implemented contract](../../../docs/contracts/room-creation.md)
-and [current diagrams](../../../docs/architecture/room-creation.md). Socket host
+content is returned. See the [implemented contract](../../../../docs/contracts/room-creation.md)
+and [current diagrams](../../../../docs/architecture/room-creation.md). Socket host
 authentication and lifecycle transitions remain in #51–#53; no socket event is
 introduced by the creation slice.
 
@@ -42,8 +42,8 @@ reviewed the actual frozen snapshot/store/HTTP contract and the current main
 quiz-authoring, user-auth, and jwt-guard specs. The authoring archive remains
 `2026-10-24-add-quiz-authoring`. Admission composes with those contracts without
 changing ownership or HTTP authentication. See the
-[implemented admission contract](../../../docs/contracts/lobby-admission.md) and
-[current architecture](../../../docs/architecture/lobby-admission.md).
+[implemented admission contract](../../../../docs/contracts/lobby-admission.md) and
+[current architecture](../../../../docs/architecture/lobby-admission.md).
 
 Issue #51 decisions: default namespace `/`, Socket.IO path `/socket.io`, and
 `host.bind {roomId}` with handshake `auth.token` establish host subscriptions.
@@ -83,8 +83,8 @@ requires a bound current guest or a freshly validated host token. Admission,
 restore, host bind, and sync await subscription before a synchronous authority
 recheck/current snapshot capture. Intervening mutations are in the snapshot;
 later mutations arrive as events. Superseded pending subscriptions are rejected
-and removed. Join/restore share attempt budgets. See [event examples and ordering](../../../docs/contracts/lobby-restoration.md)
-and [sequence/state diagrams](../../../docs/architecture/lobby-admission.md).
+and removed. Join/restore share attempt budgets. See [event examples and ordering](../../../../docs/contracts/lobby-restoration.md)
+and [sequence/state diagrams](../../../../docs/architecture/lobby-admission.md).
 Lifecycle timers, host replacement policy, cancellation, and closure cleanup
 remain #53. This change stays active.
 
@@ -113,8 +113,8 @@ subscriptions. A five-minute, maximum-1,000-entry tombstone retains only owner,
 closure, and retention deadline. Owner cancellation retries return that terminal
 outcome without a separate command receipt; all command IDs converge on the
 same closed outcome. Old room/absence callbacks cannot affect replacements.
-See [lifecycle examples and UI handoff](../../../docs/contracts/lobby-lifecycle.md)
-and [updated sequence/state diagrams](../../../docs/architecture/lobby-admission.md).
+See [lifecycle examples and UI handoff](../../../../docs/contracts/lobby-lifecycle.md)
+and [updated sequence/state diagrams](../../../../docs/architecture/lobby-admission.md).
 The complete API evidence is recorded in tasks.md before archival. Archival is
 a separate review step; no UI implementation is required for API acceptance.
 

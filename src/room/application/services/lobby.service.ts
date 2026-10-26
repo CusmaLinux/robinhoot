@@ -57,7 +57,7 @@ export class LobbyService implements LobbyUseCasePort {
         'SESSION_REPLACED',
         'Connection no longer owns this guest session',
       );
-    if (room.phase !== 'lobby')
+    if (room.phase === 'closed')
       throw new LobbyError('ROOM_CLOSED', 'Room is closed');
     return state(room);
   }
@@ -70,7 +70,7 @@ export class LobbyService implements LobbyUseCasePort {
     );
     if (!room || !guest)
       throw new LobbyError('INVALID_CREDENTIAL', 'Invalid room credential');
-    if (room.phase !== 'lobby')
+    if (room.phase === 'closed')
       throw new LobbyError('ROOM_CLOSED', 'Room is closed');
     if (
       (input.boundRoomId && input.boundRoomId !== room.roomId) ||
@@ -144,7 +144,7 @@ export class LobbyService implements LobbyUseCasePort {
     const room = this.rooms.findById(roomId);
     if (!room || room.host.ownerId !== ownerId)
       throw new LobbyError('FORBIDDEN', 'Room is not owned by this account');
-    if (room.phase !== 'lobby')
+    if (room.phase === 'closed')
       throw new LobbyError('ROOM_CLOSED', 'Room is closed');
     return state(room);
   }

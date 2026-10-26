@@ -1,3 +1,4 @@
+import type { QuestionState } from './live-question';
 export interface Guest {
   readonly playerId: string;
   readonly nickname: string;
@@ -10,10 +11,12 @@ export interface Guest {
   };
 }
 
-export interface LobbyState {
+export interface LobbyState extends Partial<
+  Omit<QuestionState, 'phase' | 'roomId' | 'revision'>
+> {
   roomId: string;
   revision: number;
-  phase: 'lobby' | 'closed';
+  phase: 'lobby' | 'closed' | 'question_open' | 'question_reveal';
   roster: { playerId: string; nickname: string; connected: boolean }[];
 }
 

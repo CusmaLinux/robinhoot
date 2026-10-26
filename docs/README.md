@@ -4,6 +4,9 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [Timed first question](contracts/live-question.md): owner-only start, fixed eligibility, safe labeled options, authoritative deadline, and automatic no-answer reveal.
+- [Live-question architecture](architecture/live-question.md): ports, timing, start/retry sequence, and phase transitions.
+
 - [Lobby closure and host return](contracts/lobby-lifecycle.md): owner cancellation, thirty-minute expiry, 120-second host return, replacement authority, closure reasons, and cleanup.
 - [Guest restoration](contracts/lobby-restoration.md): room-scoped reconnect credentials and consistent subscribed snapshots.
 
@@ -18,7 +21,7 @@ This repository implements the API. The existing UI is maintained separately; se
 - [Quiz draft architecture](architecture/quiz-drafts.md): verified components, request sequence, and draft state.
 - [Authentication API contract](contracts/authentication.md): current requests, responses, validation, expiry, revocation, and role semantics.
 - [Authentication baseline reconciliation](authentication-baseline.md): source/test evidence, differences from archived notes, and verification limits.
-- [Main behavioral specifications](../openspec/specs/): current authentication and private quiz authoring capabilities.
+- [Main behavioral specifications](../openspec/specs/): current authentication, private quiz authoring, and lobby capabilities.
 
 ## MVP planning and delivery
 

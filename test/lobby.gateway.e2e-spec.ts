@@ -17,12 +17,16 @@ import {
 } from './helpers/setup-test-app';
 import { TestPool } from './helpers/test-pool';
 import { LobbyGateway } from '../src/room/infrastructure/adapters/in/lobby.gateway';
+import type { QuestionState } from '../src/room/domain/live-question';
 
 // Advances only room time; real TCP, authentication and Socket.IO keep running.
 class ManualLobbyRuntime implements LobbyRuntimePort {
   private time = Date.now();
   private readonly pending = new Map<() => void, number>();
   now(): number {
+    return this.time;
+  }
+  wallNow(): number {
     return this.time;
   }
   schedule(at: number, callback: () => void): () => void {
@@ -209,6 +213,7 @@ describe('Lobby Socket.IO transport', () => {
     ({ app, db, pool } = await createTestApp({
       validation: true,
       lobbyRuntime: runtime,
+      questionRuntime: runtime,
     }));
     await app.listen(0, '127.0.0.1');
     server = app.getHttpServer() as Server;
@@ -225,6 +230,310 @@ describe('Lobby Socket.IO transport', () => {
     clients.splice(0).forEach((client) => client.disconnect());
     await rollbackTransaction(pool);
     if (app) await destroyTestApp(app, db);
+  });
+
+  it('opens a safe timed question for a host and two independent guests', async () => {
+    const host = await connectHost();
+    const a = await connect();
+    const b = await connect();
+    await join(a, 'Alice');
+    await join(b, 'Bob');
+    const received = new Promise<QuestionState>((resolve) =>
+      b.once('question.opened', resolve),
+    );
+    const response = await ack<QuestionState>(host, 'host.start', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 2,
+    });
+    expect(response).toMatchObject({
+      ok: true,
+      data: { phase: 'question_open', revision: 3 },
+    });
+    const state = await received;
+    expect(state.question.options.map((option) => option.label)).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+    ]);
+    expect(state.deadline - state.openedAt).toBe(20_000);
+    expect(state.eligiblePlayerIds).toHaveLength(2);
+    expect(state).not.toHaveProperty('correctOptionIds');
+    expect(JSON.stringify(state)).not.toMatch(
+      /credential|correctOption|ownerId|monotonic/,
+    );
+  });
+
+  it('automatically reveals a no-answer round once to host and guests at server time', async () => {
+    const host = await connectHost();
+    const a = await connect();
+    const b = await connect();
+    await join(a, 'Alice');
+    await join(b, 'Bob');
+    await ack(host, 'host.start', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 2,
+    });
+    const reveals: QuestionState[] = [];
+    a.on('question.revealed', (value: QuestionState) => reveals.push(value));
+    const revealed = new Promise<QuestionState>((resolve) =>
+      b.once('question.revealed', resolve),
+    );
+    runtime.advance(19_999);
+    expect(reveals).toHaveLength(0);
+    runtime.advance(1);
+    const state = await revealed;
+    expect(state).toMatchObject({
+      phase: 'question_reveal',
+      revision: 4,
+      score: 0,
+    });
+    expect(state.correctOptionIds).toEqual([state.question.options[0].id]);
+    expect(
+      await ack(host, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: { phase: 'question_reveal', revision: 4 },
+    });
+    runtime.advance(20_000);
+    await ack(a, 'state.sync', { roomId: room.roomId });
+    expect(reveals).toHaveLength(1);
+  });
+
+  it('keeps one deadline when an opening acknowledgement is lost and retried after reveal', async () => {
+    const host = await connectHost();
+    const guest = await connect();
+    await join(guest, 'Alice');
+    const input = {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    };
+    const opens: QuestionState[] = [];
+    guest.on('question.opened', (state: QuestionState) => opens.push(state));
+    const first = await ack<QuestionState>(host, 'host.start', input);
+    if (!first.ok) throw new Error(first.error.code);
+    runtime.advance(10_000);
+    expect(await ack(host, 'host.start', input)).toMatchObject({
+      ok: true,
+      data: { revision: 2, deadline: first.data.deadline },
+    });
+    runtime.advance(10_000);
+    expect(await ack(host, 'host.start', input)).toMatchObject({
+      ok: true,
+      data: {
+        phase: 'question_reveal',
+        revision: 3,
+        deadline: first.data.deadline,
+        score: 0,
+      },
+    });
+    expect(opens).toHaveLength(1);
+  });
+
+  it('rejects new admissions once the round opens', async () => {
+    const host = await connectHost();
+    await join(await connect(), 'Alice');
+    await ack(host, 'host.start', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    });
+    expect(await join(await connect(), 'Bob')).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_CLOSED' },
+    });
+    expect(
+      await ack(host, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        roster: [{ nickname: 'Alice' }],
+        eligiblePlayerIds: expect.any(Array) as string[],
+        revision: 2,
+      },
+    });
+  });
+
+  it('rejects an owner start while the lobby is empty', async () => {
+    const host = await connectHost();
+    expect(
+      await ack(host, 'host.start', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+        expectedRevision: 0,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'EMPTY_LOBBY' } });
+    expect(
+      await ack(host, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true, data: { phase: 'lobby', revision: 0 } });
+  });
+
+  it('denies a guest start without a host account token', async () => {
+    const guest = await connect();
+    await join(guest, 'Alice');
+    expect(
+      await ack(guest, 'host.start', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+        expectedRevision: 1,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+  });
+
+  it('denies a foreign account start even with a valid account token', async () => {
+    await join(await connect(), 'Alice');
+    const other = await connect({ token: await loginAccount() });
+    expect(
+      await ack(other, 'host.start', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+        expectedRevision: 1,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
+  });
+
+  it('revalidates the host token before accepting start', async () => {
+    const host = await connectHost();
+    await join(await connect(), 'Alice');
+    await request(server)
+      .post('/auth/logout')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(
+      await ack(host, 'host.start', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+        expectedRevision: 1,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+  });
+
+  it('rejects a superseded host start without consuming its command', async () => {
+    const old = await connectHost();
+    await join(await connect(), 'Alice');
+    const current = await connectHost();
+    const input = {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    };
+    expect(await ack(old, 'host.start', input)).toMatchObject({
+      ok: false,
+      error: { code: 'SESSION_REPLACED' },
+    });
+    expect(await ack(current, 'host.start', input)).toMatchObject({
+      ok: true,
+      data: { phase: 'question_open', revision: 2 },
+    });
+  });
+
+  it('rejects stale revision and conflicting command content without another opening', async () => {
+    const host = await connectHost();
+    await join(await connect(), 'Alice');
+    const input = {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    };
+    expect(
+      await ack(host, 'host.start', { ...input, expectedRevision: 0 }),
+    ).toMatchObject({ ok: false, error: { code: 'STALE_REVISION' } });
+    await ack(host, 'host.start', input);
+    expect(
+      await ack(host, 'host.start', { ...input, expectedRevision: 2 }),
+    ).toMatchObject({ ok: false, error: { code: 'COMMAND_CONFLICT' } });
+    expect(
+      await ack(host, 'host.start', {
+        ...input,
+        commandId: randomUUID(),
+        expectedRevision: 2,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'WRONG_PHASE' } });
+  });
+
+  it.each([undefined, -1, 1.5, '1', Number.MAX_SAFE_INTEGER + 1])(
+    'rejects malformed start revision %p',
+    async (expectedRevision) => {
+      const host = await connectHost();
+      expect(
+        await ack(host, 'host.start', {
+          roomId: room.roomId,
+          commandId: randomUUID(),
+          expectedRevision,
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+    },
+  );
+
+  it('rejects injected host identity in a start payload', async () => {
+    const host = await connectHost();
+    expect(
+      await ack(host, 'host.start', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+        expectedRevision: 0,
+        ownerId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+  });
+
+  it('isolates question events from clients in a different room', async () => {
+    const host = await connectHost();
+    await join(await connect(), 'Alice');
+    const otherRoom = await createRoom(await loginAccount());
+    const otherGuest = await connect();
+    await join(otherGuest, 'Bob', randomUUID(), otherRoom.pin);
+    const events: QuestionState[] = [];
+    otherGuest.on('question.opened', (state: QuestionState) =>
+      events.push(state),
+    );
+    otherGuest.on('question.revealed', (state: QuestionState) =>
+      events.push(state),
+    );
+    await ack(host, 'host.start', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    });
+    runtime.advance(20_000);
+    await ack(otherGuest, 'state.sync', { roomId: otherRoom.roomId });
+    expect(events).toHaveLength(0);
+  });
+
+  it('returns the current safe question when start occurs during guest subscription', async () => {
+    const host = await connectHost();
+    const guest = await connect();
+    const result = await mutateDuringSubscription<Admission>(
+      guest,
+      'lobby.join',
+      { pin: room.pin, nickname: 'Alice', requestId: randomUUID() },
+      async () => {
+        expect(
+          await ack(host, 'host.start', {
+            roomId: room.roomId,
+            commandId: randomUUID(),
+            expectedRevision: 1,
+          }),
+        ).toMatchObject({ ok: true });
+      },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        state: {
+          phase: 'question_open',
+          revision: 2,
+          question: {
+            options: expect.any(Array) as QuestionState['question']['options'],
+          },
+        },
+      },
+    });
+    if (!result.ok) throw new Error(result.error.code);
+    expect(result.data.state).not.toHaveProperty('correctOptionIds');
   });
 
   it('retains the roster on host return within 120 seconds', async () => {

@@ -61,3 +61,19 @@ export function cancelInput(payload: unknown) {
     commandId: input.commandId.toLowerCase(),
   };
 }
+
+export function startInput(payload: unknown) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload))
+    throw new LobbyError('INVALID_PAYLOAD', 'Invalid start payload');
+  const { expectedRevision, ...command } = payload as Record<string, unknown>;
+  const input = cancelInput(command);
+  if (
+    !Number.isSafeInteger(expectedRevision) ||
+    (expectedRevision as number) < 0
+  )
+    throw new LobbyError(
+      'INVALID_PAYLOAD',
+      'expectedRevision must be a nonnegative safe integer',
+    );
+  return { ...input, expectedRevision: expectedRevision as number };
+}

@@ -215,3 +215,11 @@ subscription fails the acknowledgement with the terminal reason and removes the
 late subscription. The event adapter emits to the room before clearing its
 channel, and tombstones cover clients that missed the live event. Process restart
 still loses all live state. No distributed ordering or durable delivery is claimed.
+
+## Timed-question extension
+
+Starting the first question now leaves the idle lobby and cancels its creation
+expiry timer; host absence/cancellation remain active. See the [current live
+question state and sequence](live-question.md) and [wire contract](../contracts/live-question.md).
+New admission is limited to the lobby; existing room credentials remain valid
+through the no-answer round.

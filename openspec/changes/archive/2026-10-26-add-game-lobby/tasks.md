@@ -15,10 +15,10 @@ application. Fresh predecessor checks passed (71 unit, 104 integration, four e2e
 build). Creation, deep freezing, incomplete readiness, foreign ownership,
 active-owner exclusion, delayed concurrent reads, successful request replay,
 request-ID conflict, PIN collision, and OpenAPI publication were exercised in
-red/green slices. See the [HTTP/PostgreSQL suite](../../../test/room.controller.spec.ts),
-[deterministic registry suite](../../../src/room/infrastructure/adapters/out/in-memory-room.store.spec.ts),
-[contract handoff](../../../docs/contracts/room-creation.md), and
-[component/sequence/state diagrams](../../../docs/architecture/room-creation.md).
+red/green slices. See the [HTTP/PostgreSQL suite](../../../../test/room.controller.spec.ts),
+[deterministic registry suite](../../../../src/room/infrastructure/adapters/out/in-memory-room.store.spec.ts),
+[contract handoff](../../../../docs/contracts/room-creation.md), and
+[component/sequence/state diagrams](../../../../docs/architecture/room-creation.md).
 HTTP checks include snapshot retention after edits/reorder/delete, safe output,
 private authenticated host binding, user/admin ownership denial, malformed UUIDs
 and ownership injection, missing/invalid/expired/revoked credentials, retries
@@ -65,9 +65,9 @@ warnings. Advisory Fallow audit passes without introduced findings after
 registering e2e entry points; architecture dependencies were reviewed manually
 because automatic boundaries are not configured.
 
-See [contract examples and API/UI handoff](../../../docs/contracts/lobby-admission.md),
-[component/sequence/state diagrams](../../../docs/architecture/lobby-admission.md),
-and [real transport suite](../../../test/lobby.gateway.e2e-spec.ts). The admission
+See [contract examples and API/UI handoff](../../../../docs/contracts/lobby-admission.md),
+[component/sequence/state diagrams](../../../../docs/architecture/lobby-admission.md),
+and [real transport suite](../../../../test/lobby.gateway.e2e-spec.ts). The admission
 receipt is bound to the original connection and normalized nickname; a copied
 UUID never discloses a secret. At most thirty receipts are retained per room;
 disconnect clears their plaintext secrets while preserving room/player verifiers
@@ -111,10 +111,10 @@ Architecture direction was reviewed manually: the crypto verifier remains behind
 its application Symbol port, transport subscription/eviction stays in the gateway,
 and the domain and synchronous immutable store retain their boundaries.
 
-See [restore/sync examples and API/UI handoff](../../../docs/contracts/lobby-restoration.md),
-[updated admission contract](../../../docs/contracts/lobby-admission.md),
-[sequence/state diagrams](../../../docs/architecture/lobby-admission.md), and
-[real-client suite](../../../test/lobby.gateway.e2e-spec.ts). No production database,
+See [restore/sync examples and API/UI handoff](../../../../docs/contracts/lobby-restoration.md),
+[updated admission contract](../../../../docs/contracts/lobby-admission.md),
+[sequence/state diagrams](../../../../docs/architecture/lobby-admission.md), and
+[real-client suite](../../../../test/lobby.gateway.e2e-spec.ts). No production database,
 schema migration, UI implementation, or external maintainer message. Task 3.1 is
 complete and reconnect-related verification from 3.3 is recorded here. Keep
 3.2–3.3 pending for #53's lifecycle, host replacement policy, cancellation, expiry,
@@ -151,10 +151,10 @@ findings. Automatic architecture boundaries are not configured; dependency
 direction was reviewed manually. Application/domain import no transport
 or timer implementations; runtime/events/lifecycle ports use Symbol DI bindings.
 
-See [lifecycle contract and UI handoff](../../../docs/contracts/lobby-lifecycle.md),
-[updated architecture](../../../docs/architecture/lobby-admission.md),
-[fake-time lifecycle suite](../../../src/room/application/services/lobby-lifecycle.service.spec.ts),
-and [real-client acceptance suite](../../../test/lobby.gateway.e2e-spec.ts).
+See [lifecycle contract and UI handoff](../../../../docs/contracts/lobby-lifecycle.md),
+[updated architecture](../../../../docs/architecture/lobby-admission.md),
+[fake-time lifecycle suite](../../../../src/room/application/services/lobby-lifecycle.service.spec.ts),
+and [real-client acceptance suite](../../../../test/lobby.gateway.e2e-spec.ts).
 Tasks 3.2–3.3 are complete. All API acceptance evidence and contract examples are
 recorded before archival; review this focused PR before the separate archival/main
 spec synchronization step. No production database, schema migration, deployment,
@@ -162,10 +162,18 @@ UI implementation, or external maintainer message.
 
 ## Workflow follow-up
 
-- Published issue tracking: [#50](https://github.com/CusmaLinux/robinhoot/issues/50) — 1.1–1.4; [#51](https://github.com/CusmaLinux/robinhoot/issues/51) — 2.1–2.4; [#52](https://github.com/CusmaLinux/robinhoot/issues/52) — 3.1 and reconnect-related 3.3 verification; [#53](https://github.com/CusmaLinux/robinhoot/issues/53) — 3.2–3.3. See [issue map](../../../docs/mvp-issue-map.md) for blockers and classification. Issue creation does not complete these tasks.
+- Published issue tracking: [#50](https://github.com/CusmaLinux/robinhoot/issues/50) — 1.1–1.4; [#51](https://github.com/CusmaLinux/robinhoot/issues/51) — 2.1–2.4; [#52](https://github.com/CusmaLinux/robinhoot/issues/52) — 3.1 and reconnect-related 3.3 verification; [#53](https://github.com/CusmaLinux/robinhoot/issues/53) — 3.2–3.3. See [issue map](../../../../docs/mvp-issue-map.md) for blockers and classification. Issue creation does not complete these tasks.
 
 - Review the implemented diff and acceptance evidence before archiving this change.
 - Archive after API implementation/verification and documented contract handoff, then confirm its requirements are present in main specs; UI completion is tracked separately.
 - Reconcile the next change against the resulting main specs before applying it.
 
 - Link related UI issues in the separate repository once their real URLs are known; screen implementation, browser accessibility, and joint professor rehearsal are external product follow-up.
+
+Stage boundary review (2026-10-26, issue #54): merged predecessor `a9886dd`
+reviewed against its recorded contract and implementation. Fresh verification:
+117 unit tests, 128 integration tests, 65 real-client/auth e2e tests, build,
+strict OpenSpec validation, and whitespace checks pass. Database checks used only
+`robinhoot_issue54_test` at loopback port 55454 with test-only credentials and
+an explicit test JWT secret. All tasks complete; game-lobby requirements synced
+to main specs before applying play-live-question.

@@ -16,6 +16,7 @@ import {
 interface ActiveLobby {
   expiresAt: number;
   cancelExpiry: () => void;
+  cancelQuestion?: () => void;
   connectionId: string | null;
   absence?: { at: number; cancel: () => void };
 }
@@ -44,6 +45,12 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
     entry.cancelExpiry = this.runtime.schedule(expiresAt, () => {
       if (this.active.get(room.roomId) === entry) this.settle(room.roomId);
     });
+  }
+  startPlaying(roomId: string, cancelQuestion: () => void): void {
+    const entry = this.active.get(roomId)!;
+    entry.cancelExpiry();
+    entry.expiresAt = Infinity;
+    entry.cancelQuestion = cancelQuestion;
   }
   private settle(roomId: string): void {
     const entry = this.active.get(roomId);
@@ -128,6 +135,7 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
     };
     const entry = this.active.get(roomId);
     entry?.cancelExpiry();
+    entry?.cancelQuestion?.();
     entry?.absence?.cancel();
     this.active.delete(roomId);
     this.rooms.remove(roomId);
@@ -149,6 +157,7 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
   onModuleDestroy(): void {
     for (const entry of this.active.values()) {
       entry.cancelExpiry();
+      entry.cancelQuestion?.();
       entry.absence?.cancel();
     }
     this.active.clear();
