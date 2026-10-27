@@ -361,3 +361,38 @@ QuizSnapshot version 2 identifies mixed/truth content; the domain report builder
 copies the snapshot's version. Freeze/copy behavior preserves type and choices
 after source edits. Both report versions use the same immutable JSONB adapter
 and owner-filtered history ports. There is no new migration or runtime provider.
+
+## Image references through the existing lifecycle
+
+The [image contract](../contracts/question-images.md) extends the immutable room
+snapshot with optional URL/description strings. The snapshot reader selects
+version 2 for truth or image metadata; the report builder retains that version.
+The live service explicitly selects both optional fields into the safe projection
+without spreading the private question or its answer key. Broadcasts, host/guest
+sync and restoration use that projection; reports retain the original snapshot.
+
+```mermaid
+sequenceDiagram
+  participant Owner
+  participant API as Authoring / room API
+  participant Snapshot as Immutable room snapshot
+  participant Live as Existing live engine
+  participant Clients as Host and guests
+  participant Reports as Owned report storage
+  Owner->>API: Save bounded HTTPS reference and optional description
+  API->>API: Syntactic validation only
+  Owner->>API: Create room
+  API->>Snapshot: Copy original metadata / type / choices
+  Owner->>API: Edit or delete source
+  Clients->>Live: Start / next / submit
+  Live->>Snapshot: Read original question
+  Live-->>Clients: Safe metadata and unchanged deadline / receipt
+  Live->>Reports: Finalize original snapshot
+  Reports-->>Owner: Original reference after source deletion or restart
+  Note over API,Reports: No remote image requests or bytes enter this flow
+```
+
+The question/open/reveal/finish state transitions remain unchanged. No media
+availability state or awaited media operation is added to the synchronous round
+mutation path. Remote failure fallback is owned by the separate UI. Strings are
+frozen; remote image bytes may change or disappear.

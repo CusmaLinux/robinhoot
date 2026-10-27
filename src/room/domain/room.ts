@@ -9,6 +9,8 @@ export interface QuizSnapshot {
     readonly id: string;
     readonly type: 'multiple-choice' | 'true-false';
     readonly prompt: string;
+    readonly imageUrl?: string;
+    readonly imageDescription?: string;
     readonly options: readonly { readonly id: string; readonly text: string }[];
     readonly correctOptionIds: readonly string[];
     readonly durationSeconds: number;

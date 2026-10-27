@@ -60,3 +60,32 @@ The agreed #60 contract covers tasks 1.1–1.4 and 2.1–2.2. Timing, scoring,
 accepted receipts, ownership and report storage keep their existing paths.
 Image fields and tasks 3.1–3.4 remain #61; do not archive this combined change
 until that work and its API handoff are verified.
+
+## Media reconciliation — issue #61 (2026-10-27)
+
+Re-read the actual main quiz-authoring, live-gameplay, game-progression and
+game-results specs and verified that the predecessor full-game/results change
+is archived. Issue #60 is merged at `82b6db6` with its first six tasks complete.
+
+Optional `imageUrl` is bounded to 2048 UTF-16 code units and checked with a
+framework-free predicate shared by HTTP validation and domain structure/readiness.
+Require explicit HTTPS syntax, a nonempty authority/hostname, no user-info,
+whitespace/control characters, backslashes or malformed percent escapes. Do not
+resolve DNS or fetch remote content. Preserve accepted strings verbatim, including
+queries and fragments. The optional plain-text `imageDescription` permits up to
+500 Unicode characters, including an empty string; it may exist independently.
+Omitted fields are absent in legacy payloads; explicit null is invalid. Full
+replacement saves remove omitted source metadata without changing snapshots.
+
+The existing JSONB question array and report document need no migration. Extend
+the existing version-2 snapshot/report shape for truth or either metadata field;
+plain multiple-choice without metadata remains version 1. Readers preserve stored
+versions. No new DI bindings, ports, async round operations or media availability
+states are needed. The safe live projection selects metadata explicitly, keeping
+answer keys private until reveal. Frozen strings survive source edits/deletion
+and backend restart; remote bytes remain mutable and are never stored.
+
+See [the metadata contract](../../../docs/contracts/question-images.md) for HTTP,
+Socket.IO, version compatibility and UI rendering/fallback handoff. Updated
+architecture diagrams retain existing round transitions and show the metadata
+flow through authoring, snapshots, live projections and saved reports.

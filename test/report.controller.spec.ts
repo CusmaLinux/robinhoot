@@ -196,7 +196,7 @@ describe('Owned report history HTTP', () => {
     ]);
   });
 
-  it('reopens committed report snapshots after source deletion and a fresh backend instance', async () => {
+  it('reopens committed image metadata after source deletion and a fresh backend instance', async () => {
     const credentials = {
       email: `history-restart-${randomUUID()}@example.com`,
       password: 'TestPassword123!',
@@ -235,7 +235,21 @@ describe('Owned report history HTTP', () => {
         id,
         roomId: id,
         ownerId,
-        quiz: { ...report.quiz, sourceQuizId: sourceId },
+        version: 2,
+        quiz: {
+          ...report.quiz,
+          version: 2,
+          sourceQuizId: sourceId,
+          questions: report.quiz.questions.map((question, index) => ({
+            ...question,
+            ...(index === 0
+              ? {
+                  imageUrl: 'https://unreachable.invalid/original.png',
+                  imageDescription: 'Original diagram',
+                }
+              : {}),
+          })),
+        },
       };
       await first.app
         .get<ReportRepositoryPort>(REPORT_REPOSITORY_PORT)
@@ -303,6 +317,18 @@ describe('Owned report history HTTP', () => {
     expect(document.paths['/reports/{id}'].get?.responses).toHaveProperty(
       '404',
     );
+    const questionSchema =
+      document.components?.schemas?.ReportQuestionSnapshotDto;
+    expect(questionSchema).toMatchObject({
+      properties: {
+        imageUrl: { type: 'string', format: 'uri', maxLength: 2048 },
+        imageDescription: { type: 'string', maxLength: 500 },
+      },
+    });
+    if (!questionSchema || !('required' in questionSchema))
+      throw new Error('Missing report schema');
+    expect(questionSchema.required).not.toContain('imageUrl');
+    expect(questionSchema.required).not.toContain('imageDescription');
     expect(document.components?.schemas?.ReportDifficultyDto).toMatchObject({
       required: [
         'questionId',

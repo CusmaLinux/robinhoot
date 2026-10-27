@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import type { GameReport } from '../../../domain/game-report';
 
 class ReportOptionDto {
@@ -14,6 +14,15 @@ class ReportQuestionSnapshotDto {
   type!: 'multiple-choice' | 'true-false';
   @ApiProperty()
   prompt!: string;
+  @ApiPropertyOptional({
+    format: 'uri',
+    maxLength: 2048,
+    description:
+      'Frozen HTTPS reference; remote bytes are not stored or fetched.',
+  })
+  imageUrl?: string;
+  @ApiPropertyOptional({ maxLength: 500 })
+  imageDescription?: string;
   @ApiProperty({ type: [ReportOptionDto] })
   options!: ReportOptionDto[];
   @ApiProperty({ type: [String], format: 'uuid' })
@@ -25,7 +34,7 @@ class ReportQuizSnapshotDto {
   @ApiProperty({
     enum: [1, 2],
     description:
-      'Version 1: multiple-choice only. Version 2: contains True/False. Stored versions are preserved.',
+      'Version 1: multiple-choice only. Version 2: contains True/False or image metadata. Stored versions are preserved.',
   })
   version!: 1 | 2;
   @ApiProperty({
@@ -79,7 +88,7 @@ export class GameReportDto implements GameReport {
   @ApiProperty({
     enum: [1, 2],
     description:
-      'Version 1: multiple-choice only. Version 2: contains True/False. Stored versions are preserved.',
+      'Version 1: multiple-choice only. Version 2: contains True/False or image metadata. Stored versions are preserved.',
   })
   version!: 1 | 2;
   @ApiProperty({ format: 'uuid', description: 'Report ID equals room ID.' })

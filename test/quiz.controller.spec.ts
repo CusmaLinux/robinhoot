@@ -97,6 +97,125 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
     };
   }
 
+  it.each([
+    'http://images.example/cell.png',
+    'ftp://images.example/cell.png',
+    'javascript:alert(1)',
+    'data:image/png;base64,aGVsbG8=',
+    'not a URL',
+    'https://',
+    'https:images.example/cell.png',
+    'https:///images.example/cell.png',
+    'https://teacher:password@images.example/cell.png',
+    'https://teacher@images.example/cell.png',
+    'https://@images.example/cell.png',
+    'https://images.example:bad/cell.png',
+    'https://images.example/bad%zz',
+    ' https://images.example/cell.png',
+    'https://images.example/cell\n.png',
+    'https://images.example/' + 'a'.repeat(2048),
+    '',
+    null,
+    42,
+    {},
+  ])(
+    'rejects invalid image URL %# atomically with a field error',
+    async (imageUrl) => {
+      const draft = await createDraft();
+      const response = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send({
+          title: 'Bad reference',
+          questions: [{ ...question(), imageUrl }],
+        })
+        .expect(400);
+      expect(
+        (response.body as { message: string[] }).message.join(' '),
+      ).toContain('imageUrl');
+      const reopened = await request(server)
+        .get(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .expect(200);
+      expect(reopened.body).toMatchObject({ title: '', questions: [] });
+    },
+  );
+
+  it.each([null, 42, {}, 'a'.repeat(501)])(
+    'rejects invalid image description %# with a field error',
+    async (imageDescription) => {
+      const draft = await createDraft();
+      const response = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send({
+          title: 'Bad description',
+          questions: [{ ...question(), imageDescription }],
+        })
+        .expect(400);
+      expect(
+        (response.body as { message: string[] }).message.join(' '),
+      ).toContain('imageDescription');
+    },
+  );
+
+  it('accepts metadata length boundaries and removes omitted fields on replacement', async () => {
+    const draft = await createDraft();
+    const original = question();
+    const prefix = 'https://images.example/';
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({
+        title: 'Bounds',
+        questions: [
+          {
+            ...original,
+            imageUrl: prefix + 'a'.repeat(2048 - prefix.length),
+            imageDescription: 'a'.repeat(500),
+          },
+        ],
+      })
+      .expect(200);
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Removed', questions: [original] })
+      .expect(200);
+    expect((saved.body as { questions: unknown[] }).questions).toEqual([
+      original,
+    ]);
+    const reopened = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect((reopened.body as { questions: unknown[] }).questions).toEqual([
+      original,
+    ]);
+  });
+
+  it('saves and reopens optional HTTPS image metadata verbatim', async () => {
+    const draft = await createDraft();
+    const imageQuestion = {
+      ...question(),
+      imageUrl: 'https://unreachable.invalid/cell.png?version=1#diagram',
+      imageDescription: 'Animal cell with its nucleus labeled',
+    };
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Image reference', questions: [imageQuestion] })
+      .expect(200);
+    const reopened = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(reopened.body).toMatchObject({
+      hostable: true,
+      questions: [imageQuestion],
+    });
+  });
+
   it('saves and reopens hostable True/False choices without changing their IDs', async () => {
     const draft = await createDraft();
     const truth = {

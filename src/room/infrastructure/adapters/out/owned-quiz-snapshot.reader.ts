@@ -20,7 +20,12 @@ export class OwnedQuizSnapshotReader implements QuizSnapshotReaderPort {
     if (!quiz) throw new QuizNotFoundError('Quiz not found');
     if (!quiz.hostable) throw new QuizNotHostableError(quiz.errors);
     return {
-      version: quiz.questions.some((question) => question.type === 'true-false')
+      version: quiz.questions.some(
+        (question) =>
+          question.type === 'true-false' ||
+          question.imageUrl !== undefined ||
+          question.imageDescription !== undefined,
+      )
         ? 2
         : 1,
       sourceQuizId: quiz.id,

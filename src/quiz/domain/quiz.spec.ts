@@ -27,6 +27,19 @@ function quiz(questions = [completeQuestion()]): Quiz {
 }
 
 describe('Quiz readiness', () => {
+  it('prevents hosting or saving a persisted credential-bearing image reference', () => {
+    const content = quiz([
+      {
+        ...completeQuestion(),
+        imageUrl: 'https://teacher:password@images.example/cell.png',
+      },
+    ]);
+    expect(quizReadiness(content)).toMatchObject({
+      hostable: false,
+      errors: [{ field: 'questions[0].imageUrl', code: 'IMAGE_URL' }],
+    });
+    expect(() => assertQuizStructure(content)).toThrow('questions[0].imageUrl');
+  });
   it('keeps legacy multiple-choice UUIDs valid even when they match new truth IDs', () => {
     const original = quiz([
       {

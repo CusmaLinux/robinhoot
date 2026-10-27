@@ -14,6 +14,8 @@ class ReadinessErrorDto {
       'DURATION',
       'OPTION_MAPPING',
       'CORRECT_OPTION_MAPPING',
+      'IMAGE_URL',
+      'IMAGE_DESCRIPTION',
     ],
   })
   code!: string;

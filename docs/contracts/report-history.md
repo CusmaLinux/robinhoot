@@ -135,3 +135,9 @@ This is the API contract handoff. UI implementation and shared professor rehears
 remain in the separate UI repository; no UI issue URL is invented here.
 
 See [True/False and report compatibility](true-false.md) for mixed snapshots and the version-2 contract.
+
+## Optional image metadata
+
+See [question images](question-images.md) for optional `imageUrl` /
+`imageDescription`, syntactic HTTPS validation, safe projections, immutable
+reference snapshots, compatibility and the API/UI handoff. The API never fetches images.

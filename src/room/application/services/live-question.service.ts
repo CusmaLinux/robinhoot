@@ -18,7 +18,7 @@ import type {
   QuestionState,
 } from '../../domain/live-question';
 import { LobbyError } from '../../domain/lobby';
-import type { Room } from '../../domain/room';
+import type { QuizSnapshot, Room } from '../../domain/room';
 
 @Injectable()
 export class LiveQuestionService implements LiveQuestionPort {
@@ -327,6 +327,29 @@ export class LiveQuestionService implements LiveQuestionPort {
     }
     return room?.round ? this.project(room, connectionId) : null;
   }
+  private projectQuestion(
+    question: QuizSnapshot['questions'][number],
+  ): QuestionState['question'] {
+    return {
+      id: question.id,
+      type: question.type,
+      prompt: question.prompt,
+      ...(question.imageUrl !== undefined
+        ? { imageUrl: question.imageUrl }
+        : {}),
+      ...(question.imageDescription !== undefined
+        ? { imageDescription: question.imageDescription }
+        : {}),
+      options: question.options.map((option, index) => ({
+        id: option.id,
+        label:
+          question.type === 'true-false'
+            ? option.text
+            : String.fromCharCode(65 + index),
+        text: option.text,
+      })),
+    };
+  }
   private project(room: Room, connectionId?: string): QuestionState {
     const playerId = room.guests.find(
       (g) => g.connectionId === connectionId,
@@ -343,19 +366,7 @@ export class LiveQuestionService implements LiveQuestionPort {
       questionId: question.id,
       revision: room.revision,
       phase: room.phase as QuestionState['phase'],
-      question: {
-        id: question.id,
-        type: question.type,
-        prompt: question.prompt,
-        options: question.options.map((option, index) => ({
-          id: option.id,
-          label:
-            question.type === 'true-false'
-              ? option.text
-              : String.fromCharCode(65 + index),
-          text: option.text,
-        })),
-      },
+      question: this.projectQuestion(question),
       eligiblePlayerIds: [...round.eligiblePlayerIds],
       openedAt: round.openedAt,
       deadline: round.deadline,

@@ -1,6 +1,6 @@
 # Tasks
 
-Work one tested behavior at a time: failing test, minimal implementation, then refactor. All boxes are intentionally pending; planning does not complete implementation.
+Work one tested behavior at a time: failing test, minimal implementation, then refactor. Checked boxes record verified API work; planning alone does not complete implementation.
 
 ## 1. Extend the question format compatibly
 
@@ -16,10 +16,10 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 
 ## 3. Add optional image references
 
-- [ ] 3.1 Test valid/invalid image references then add bounded HTTPS URL validation and API serialization without backend fetching; verify malformed, credential-bearing, and non-HTTPS references are rejected.
-- [ ] 3.2 Document and test optional image metadata in host/report payloads; verify an unreachable image reference triggers no backend fetch or availability wait and does not block round opening or valid answers.
-- [ ] 3.3 Test source image/type edits after room creation; verify existing game/report snapshots preserve their original URL references and document that remote image bytes can change.
-- [ ] 3.4 Run mixed-format and legacy quiz API tests with an unreachable image URL; record compatibility/acceptance evidence and verify relevant suites, the API build, and architecture boundaries.
+- [x] 3.1 Test valid/invalid image references then add bounded HTTPS URL validation and API serialization without backend fetching; verify malformed, credential-bearing, and non-HTTPS references are rejected.
+- [x] 3.2 Document and test optional image metadata in host/report payloads; verify an unreachable image reference triggers no backend fetch or availability wait and does not block round opening or valid answers.
+- [x] 3.3 Test source image/type edits after room creation; verify existing game/report snapshots preserve their original URL references and document that remote image bytes can change.
+- [x] 3.4 Run mixed-format and legacy quiz API tests with an unreachable image URL; record compatibility/acceptance evidence and verify relevant suites, the API build, and architecture boundaries.
 
 ## Workflow follow-up
 
@@ -72,6 +72,50 @@ Architecture boundaries/policies remain unconfigured in Fallow; dependency
 direction, framework-free domain rules and existing Symbol DI were reviewed
 directly. No new providers or SQL migration are needed.
 
-Keep image tasks 3.1–3.4 and archival pending for #61. The current change is
-not fully complete; its image-dependent mixed acceptance remains in that issue.
+At the #60 checkpoint, image tasks 3.1–3.4 and archival remained pending for #61.
+The image-dependent mixed acceptance evidence is recorded below.
 UI implementation, merging and deployment are separate follow-up.
+
+## Issue #61 implementation evidence (2026-10-27)
+
+Tasks 3.1–3.4 are complete: 10/10 overall. Re-read the implemented predecessor
+main specs and verified the archived full-game/results boundary and merged #60
+before extending metadata. One-test/minimal-implementation cycles first exposed
+HTTP rejection of valid metadata, acceptance of non-HTTPS URLs, unsafe persisted
+reference readiness, missing safe live metadata and image-only version selection.
+Each was corrected through the existing ports/adapters without fetching media.
+
+HTTP checks cover verbatim save/reopen, syntactic URL failures, credentials,
+non-HTTPS schemes, scalar/null rejection, URL/description bounds, omission removal
+and the executable mixed Swagger example. An unavailable local HTTPS sentinel
+receives zero TCP connections through save/room creation/start/submission/finish;
+real host acknowledgement, guest broadcast and sync expose safe metadata without
+answer keys. A mixed truth/multiple-choice game changes the same source question's
+type/choices/image after room creation, then proves the original metadata/type
+in gameplay and owned history after source deletion. Timing, exact cutoff,
+receipts, scores and correct/wrong/missing counts retain their previous rules.
+An image-only multiple-choice game emits version 2; independent legacy fixtures
+still host and emit version 1 and old reports are returned without rewriting.
+Committed image metadata survives source deletion and a fresh backend/pool.
+
+Verification: 220 unit tests / 22 suites, 179 integration tests / six suites,
+136 e2e tests / two suites pass. After the audit-driven projection/validation
+refactor, rerun the unit suite and focused image/mixed/legacy/restart contract
+checks. API build, source/test TypeScript, TypeScript formatting, read-only lint,
+strict validation of all thirteen OpenSpec items, local documentation links and
+whitespace checks pass. Lint retains only the two existing auth-test warnings.
+Tests use the dedicated `robinhoot_issue58_test` database on loopback port 55458,
+with explicit test credentials and secret. No production database or migration
+was used. Fallow audit against `origin/main` passes with zero introduced findings;
+four inherited complexity findings remain. No suppression or threshold changes.
+Fallow architecture policies remain unconfigured; dependency direction,
+framework-free rules, explicit safe projection and existing Symbol DI were
+reviewed directly. No new provider, SQL migration or asynchronous round step.
+
+The [metadata contract](../../../docs/contracts/question-images.md), executable
+OpenAPI example and current architecture sequence describe the API/UI handoff:
+optional fields, both report versions, unchanged round states, browser fallback
+responsibility, and URLs frozen without remote bytes. UI implementation and
+joint classroom rehearsal remain external follow-up. The combined API change
+is ready for post-review specification sync and archival; it is left active
+until that review. Merging and deployment are separate requests.

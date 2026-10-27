@@ -229,3 +229,9 @@ Issue #48 verification (2026-10-24): dedicated PostgreSQL 17 database `robinhoot
 Issue #49 verification (2026-10-24): isolated PostgreSQL 17 container `robinhoot-issue49-test`, database `robinhoot_issue49_test`, loopback port 55449, test-only credentials, and the four existing migrations. Unit: 71 tests / fifteen suites; integration: 104 tests / three suites, including 91 quiz HTTP tests; e2e: four tests. Build, TypeScript, scoped lint, strict OpenSpec validation, and whitespace checks pass. Full lint has no errors and only the two pre-existing auth guard test warnings. Advisory Fallow audit passes with no introduced findings. Deletion and its generated OpenAPI contract were exercised red-to-green. Owner removal, foreign-user/admin denial, auth/UUID failures, durable deletion through an independent app/pool, and the full two-question walkthrough pass. Final review confirmed inward dependency direction and existing Symbol bindings. No schema migration or production database access was required. Tasks 4.1–4.3 complete the authoring API stage; concrete game/report retention regressions remain with their future implementations.
 
 True/False authoring and type conversions are described in the [format contract](true-false.md), including the tested mixed Swagger example.
+
+## Optional image metadata
+
+See [question images](question-images.md) for optional `imageUrl` /
+`imageDescription`, syntactic HTTPS validation, safe projections, immutable
+reference snapshots, compatibility and the API/UI handoff. The API never fetches images.

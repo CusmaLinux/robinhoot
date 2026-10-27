@@ -76,6 +76,8 @@ export const MIXED_QUIZ_EXAMPLE = {
       id: '10000000-0000-4000-8000-000000000002',
       type: 'true-false',
       prompt: 'All cells have a nucleus.',
+      imageUrl: 'https://unreachable.invalid/cell.png',
+      imageDescription: 'A labeled animal cell',
       options: TRUE_FALSE_OPTIONS,
       correctOptionIds: [TRUE_FALSE_OPTIONS[1].id],
       durationSeconds: 10,
