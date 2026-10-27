@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "id": "ac8c4643-7df3-49f1-8718-d3ccfa37bc43",
+  "roomId": "ac8c4643-7df3-49f1-8718-d3ccfa37bc43",
+  "ownerId": "92f9f897-cfb7-4802-9a3a-e1e38c66b865",
+  "completedAt": "2026-10-27T16:00:00.000Z",
+  "quiz": {
+    "version": 1,
+    "sourceQuizId": "770aaed8-2419-4249-8354-c9ba21b9ef53",
+    "title": "Cells",
+    "questions": [
+      {
+        "id": "a549c315-20c4-4697-837a-7707a1db1248",
+        "type": "multiple-choice",
+        "prompt": "Which cell has a nucleus?",
+        "options": [
+          {
+            "id": "3b3041fa-dc31-4828-8297-ba0612f3cfbb",
+            "text": "Animal"
+          },
+          {
+            "id": "1a94df56-d405-44ca-972e-f98501d8c333",
+            "text": "Bacterium"
+          },
+          {
+            "id": "ce8efca5-2376-4aab-964b-e54bb36463b6",
+            "text": "Virus"
+          },
+          {
+            "id": "d7412189-65f3-4a45-9361-71dca892d7ea",
+            "text": "None"
+          }
+        ],
+        "correctOptionIds": ["3b3041fa-dc31-4828-8297-ba0612f3cfbb"],
+        "durationSeconds": 20
+      }
+    ]
+  },
+  "standings": [
+    {
+      "playerId": "alice",
+      "nickname": "Alice",
+      "total": 1000,
+      "rank": 1
+    },
+    {
+      "playerId": "bob",
+      "nickname": "Bob",
+      "total": 1000,
+      "rank": 1
+    },
+    {
+      "playerId": "carol",
+      "nickname": "Carol",
+      "total": 0,
+      "rank": 3
+    }
+  ],
+  "questions": [
+    {
+      "questionId": "a549c315-20c4-4697-837a-7707a1db1248",
+      "eligible": 3,
+      "correct": 2,
+      "incorrect": 0,
+      "missing": 1,
+      "accuracy": 66.66666666666666
+    }
+  ]
+}

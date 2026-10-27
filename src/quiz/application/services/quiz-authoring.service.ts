@@ -25,7 +25,8 @@ export class QuizAuthoringService implements QuizAuthoringUseCasePort {
     id: string,
     content: QuizContent,
   ): Promise<QuizDetail | null> {
-    assertQuizStructure(content);
+    const previous = await this.repository.findOwned(ownerId, id);
+    assertQuizStructure(content, previous ?? undefined);
     const quiz = await this.repository.saveOwned(ownerId, id, content);
     return quiz ? { ...quiz, ...quizReadiness(quiz) } : null;
   }

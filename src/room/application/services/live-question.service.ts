@@ -349,7 +349,10 @@ export class LiveQuestionService implements LiveQuestionPort {
         prompt: question.prompt,
         options: question.options.map((option, index) => ({
           id: option.id,
-          label: String.fromCharCode(65 + index),
+          label:
+            question.type === 'true-false'
+              ? option.text
+              : String.fromCharCode(65 + index),
           text: option.text,
         })),
       },

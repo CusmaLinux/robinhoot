@@ -54,7 +54,7 @@ export class ReportController {
   @ApiOkResponse({
     type: GameReportDto,
     description:
-      'The original version-1 report, including quiz snapshot, shared ranks and question counts.',
+      'The original version-1 or version-2 report, including quiz snapshot, shared ranks and question counts.',
   })
   @ApiBadRequestResponse({ description: 'Report ID must be a UUID.' })
   @ApiNotFoundResponse({

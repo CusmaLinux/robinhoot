@@ -1,3 +1,5 @@
+import { TRUE_FALSE_OPTIONS } from '../../../domain/quiz';
+
 export const EMPTY_DRAFT_EXAMPLE = {
   id: 'd65ae15c-a1d9-42ce-a328-104d2eebd8f1',
   title: '',
@@ -62,6 +64,21 @@ export const SAVE_QUIZ_EXAMPLE = {
       ],
       correctOptionIds: ['20000000-0000-4000-8000-000000000001'],
       durationSeconds: 20,
+    },
+  ],
+};
+
+export const MIXED_QUIZ_EXAMPLE = {
+  title: 'Biology: mixed formats',
+  questions: [
+    ...SAVE_QUIZ_EXAMPLE.questions,
+    {
+      id: '10000000-0000-4000-8000-000000000002',
+      type: 'true-false',
+      prompt: 'All cells have a nucleus.',
+      options: TRUE_FALSE_OPTIONS,
+      correctOptionIds: [TRUE_FALSE_OPTIONS[1].id],
+      durationSeconds: 10,
     },
   ],
 };

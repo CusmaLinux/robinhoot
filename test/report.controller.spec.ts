@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
 import type { Server } from 'http';
@@ -62,6 +64,27 @@ describe('Owned report history HTTP', () => {
   afterEach(async () => rollbackTransaction(pool));
   afterAll(async () => {
     if (app) await destroyTestApp(app, db);
+  });
+
+  it('returns a pre-extension version-1 report fixture without rewriting its snapshot', async () => {
+    const legacy = JSON.parse(
+      readFileSync(join(__dirname, 'fixtures/legacy-report-v1.json'), 'utf8'),
+    ) as GameReport;
+    const id = randomUUID();
+    const document = { ...legacy, id, roomId: id, ownerId: report.ownerId };
+    await db
+      .insertInto('reports')
+      .values({
+        room_id: id,
+        owner_id: document.ownerId,
+        document: JSON.stringify(document),
+      })
+      .execute();
+    const response = await request(server)
+      .get(`/reports/${id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(response.body).toEqual(document);
   });
 
   it('lists only reports owned by the authenticated account', async () => {

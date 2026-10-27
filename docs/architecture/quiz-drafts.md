@@ -16,7 +16,7 @@ flowchart LR
 
 The composition root binds both Symbol ports in `QuizModule`, imported by `AppModule`. Domain types, identity checks, and readiness have no NestJS or Kysely imports. The application receives verified owner IDs and content through its inbound port, validates identity consistency, and calls its outbound repository port. Request objects and database rows stay in adapters. The outbound adapter maps rows explicitly to exclude owner IDs. Every read/list/update/delete query includes the verified owner predicate; admins have no ownership bypass.
 
-DTOs check shape, scalar types, bounded collections/text, and object elements before use-case dispatch. Duplicate UUIDs and dangling correct-option references produce a domain structure error translated to HTTP 400 by the controller. Incomplete text, option counts, selections, and durations pass save validation and return readiness errors. No write occurs on structural errors.
+DTOs check shape, scalar types, bounded collections/text, and object elements before use-case dispatch. Duplicate UUIDs and dangling correct-option references produce a domain structure error translated to HTTP 400 by the controller. Incomplete text, multiple-choice option counts, selections, and durations pass save validation and return readiness errors. True/False requires its exact fixed choice mapping on save. No write occurs on structural errors.
 
 ```mermaid
 sequenceDiagram
@@ -36,7 +36,8 @@ sequenceDiagram
     Auth->>HTTP: Verified account identity
     HTTP->>HTTP: Validate required nested DTOs and structural bounds
     HTTP->>App: save(ownerId, id, content)
-    App->>App: Check unique IDs and correct-option references
+    App->>DB: Read prior owned draft for type-change validation
+    App->>App: Check unique IDs, fixed truth choices and new choice IDs on conversion
     alt Malformed structure
       App-->>HTTP: Domain structure error
       HTTP-->>UI: 400 with field error, no write
@@ -98,3 +99,17 @@ Deletion follows the same inbound Symbol port → application service → outbou
 Live rooms and reports are future independent snapshot owners. Their designs require copying quiz content at room creation and persisting report snapshots without a cascading source-quiz foreign key. Source deletion must never invoke their lifecycle or delete their snapshots. Concrete live/report retention regressions belong to those implementations; this stage reviews the current schema and dependency direction rather than fabricating future storage.
 
 Kysely's `FileMigrationProvider` loads migration files by directory at runtime. `.fallowrc.json` declares that directory as an entry point so static analysis recognizes these database lifecycle exports without artificial imports. The CI audit installs dependencies before analysis.
+
+## True/False extension
+
+[Issue #60's format contract](../contracts/true-false.md) adds fixed True/False
+UUIDs through the same ports and adapters. The authoring service reads the
+prior owned draft before structural validation to reject reused choice IDs
+when an existing question changes type. Invalid conversions leave the stored
+state unchanged in the state diagram above; valid complete or incomplete
+conversions use the same two saved states. No new provider or table is needed.
+
+Domain readiness checks truth mappings as well as completeness. The immutable
+room snapshot reader emits version 2 when any question is True/False; reports
+retain that version and the original content. Legacy multiple-choice storage
+and version-1 reports remain readable and playable without backfill.

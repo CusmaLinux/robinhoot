@@ -12,6 +12,8 @@ class ReadinessErrorDto {
       'OPTION_COUNT',
       'CORRECT_OPTION_COUNT',
       'DURATION',
+      'OPTION_MAPPING',
+      'CORRECT_OPTION_MAPPING',
     ],
   })
   code!: string;

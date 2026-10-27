@@ -67,7 +67,7 @@ sequenceDiagram
   Live->>Live: Cancel idle lobby expiry and retain host absence policy
   Live->>Timer: Schedule one authoritative deadline
   Live-->>Host: Safe acknowledgement and question.opened
-  Live-->>Guests: question.opened, labels A–D, no correctness
+  Live-->>Guests: question.opened, A–D or True/False labels, no correctness
   Guests->>Gateway: answer.submit(roomId, questionId, submissionId, optionId)
   Gateway->>Live: Submit using current bound connection
   Live->>Live: Validate identity and payload, check receipt, then deadline
@@ -347,3 +347,17 @@ checked reads enforce it even if timer delivery is delayed. Host rebind cannot
 extend it. UUID/entry checks isolate stale callbacks from replacement rooms.
 Cleanup removes the live aggregate and active lifecycle entry without publishing
 `lobby.closed`, creating a closure tombstone or touching the durable repository.
+
+## Mixed question formats
+
+[True/False](../contracts/true-false.md) changes only the safe option-label
+projection in the live service: truth labels are their fixed text, while
+multiple-choice labels remain positional A–D. The same engine, command ports,
+monotonic scheduler, receipts and state/sequence transitions above handle both
+formats. There is no extra timing or scoring branch. Fixed truth IDs repeat
+across questions; the existing question ID check scopes accepted submissions.
+
+QuizSnapshot version 2 identifies mixed/truth content; the domain report builder
+copies the snapshot's version. Freeze/copy behavior preserves type and choices
+after source edits. Both report versions use the same immutable JSONB adapter
+and owner-filtered history ports. There is no new migration or runtime provider.

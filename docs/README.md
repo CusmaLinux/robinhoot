@@ -4,6 +4,8 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [True/False questions](contracts/true-false.md): fixed choices, safe conversions, mixed gameplay and versioned report compatibility.
+
 - [Owned report history](contracts/report-history.md): account-only list/read, competition rankings, chart-ready counts and ten-minute finished-session retention.
 
 - [Durable game finalization](contracts/game-finalization.md): owner-only finish, saved immutable report facts, shared ranks, retryable failures and completion after persistence.

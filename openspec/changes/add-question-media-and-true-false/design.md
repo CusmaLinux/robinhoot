@@ -30,3 +30,33 @@ Non-goals: file upload, backend media fetching, answer images, video, or rewriti
 ## Migration Plan
 
 Deploy tolerant API readers first, then enable new question creation and publish updated contract examples for the UI repository. Test existing quizzes and reports before enabling creation. Rollback disables new mixed authoring but retains compatible readers; do not revert to a reader unable to handle saved mixed content.
+
+## Predecessor reconciliation — issue #60 (2026-10-27)
+
+Verified merged #59 at `d208635`: 199 unit, 142 integration and 133 e2e
+tests; build, source/test types, formatting, read-only lint and strict spec
+validation pass. Synced six progression/results requirements and archived
+`finish-game-with-results` as `2026-10-27-finish-game-with-results`, then
+re-read the resulting main specs before extending payloads.
+
+Quiz rows contain an unversioned JSONB questions array; every existing
+question already has `type: multiple-choice`. No discriminator backfill or SQL
+migration is needed. Existing snapshots and reports are version 1. Mixed/True/False
+snapshots and reports use version 2; unchanged multiple-choice games continue
+to emit version 1. Readers accept both without rewriting stored documents.
+
+True/False choices are ordered True, False with stable UUIDs
+`00000000-0000-4000-8000-000000000001` and
+`00000000-0000-4000-8000-000000000002`. These preserve existing UUID boundary
+validation and generic option-ID submission. Fixed text and order are structural;
+invalid mappings are rejected atomically on save and cannot become hostable.
+Missing prompt, correctness or supported duration remain readiness errors.
+Full replacement conversions must submit the new format's choices and explicit
+correct ID. A type conversion for the same question ID rejects reuse of its
+previous choice IDs. Existing multiple-choice UUIDs remain valid even if they
+coincide with the new truth IDs; the conversion check uses the owned prior draft.
+
+The agreed #60 contract covers tasks 1.1–1.4 and 2.1–2.2. Timing, scoring,
+accepted receipts, ownership and report storage keep their existing paths.
+Image fields and tasks 3.1–3.4 remain #61; do not archive this combined change
+until that work and its API handoff are verified.

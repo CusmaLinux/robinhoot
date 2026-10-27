@@ -2,12 +2,12 @@ import type { GameReport } from './game-report';
 import type { LiveRound } from './live-question';
 import type { Guest } from './lobby';
 export interface QuizSnapshot {
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly sourceQuizId: string;
   readonly title: string;
   readonly questions: readonly {
     readonly id: string;
-    readonly type: 'multiple-choice';
+    readonly type: 'multiple-choice' | 'true-false';
     readonly prompt: string;
     readonly options: readonly { readonly id: string; readonly text: string }[];
     readonly correctOptionIds: readonly string[];

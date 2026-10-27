@@ -10,8 +10,8 @@ class ReportOptionDto {
 class ReportQuestionSnapshotDto {
   @ApiProperty({ format: 'uuid' })
   id!: string;
-  @ApiProperty({ enum: ['multiple-choice'] })
-  type!: 'multiple-choice';
+  @ApiProperty({ enum: ['multiple-choice', 'true-false'] })
+  type!: 'multiple-choice' | 'true-false';
   @ApiProperty()
   prompt!: string;
   @ApiProperty({ type: [ReportOptionDto] })
@@ -22,8 +22,12 @@ class ReportQuestionSnapshotDto {
   durationSeconds!: number;
 }
 class ReportQuizSnapshotDto {
-  @ApiProperty({ enum: [1] })
-  version!: 1;
+  @ApiProperty({
+    enum: [1, 2],
+    description:
+      'Version 1: multiple-choice only. Version 2: contains True/False. Stored versions are preserved.',
+  })
+  version!: 1 | 2;
   @ApiProperty({
     format: 'uuid',
     description: 'Informational source ID; source may have been deleted.',
@@ -72,8 +76,12 @@ class ReportDifficultyDto {
   accuracy!: number;
 }
 export class GameReportDto implements GameReport {
-  @ApiProperty({ enum: [1] })
-  version!: 1;
+  @ApiProperty({
+    enum: [1, 2],
+    description:
+      'Version 1: multiple-choice only. Version 2: contains True/False. Stored versions are preserved.',
+  })
+  version!: 1 | 2;
   @ApiProperty({ format: 'uuid', description: 'Report ID equals room ID.' })
   id!: string;
   @ApiProperty({ format: 'uuid' })

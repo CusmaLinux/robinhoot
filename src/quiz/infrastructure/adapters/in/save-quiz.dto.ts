@@ -31,16 +31,21 @@ export class QuizQuestionDto {
   @IsUUID()
   id!: string;
 
-  @ApiProperty({ enum: ['multiple-choice'] })
-  @IsIn(['multiple-choice'])
-  type!: 'multiple-choice';
+  @ApiProperty({ enum: ['multiple-choice', 'true-false'] })
+  @IsIn(['multiple-choice', 'true-false'])
+  type!: 'multiple-choice' | 'true-false';
 
   @ApiProperty({ maxLength: 2000 })
   @IsString()
   @MaxLength(2000)
   prompt!: string;
 
-  @ApiProperty({ type: [QuizOptionDto], maxItems: 4 })
+  @ApiProperty({
+    type: [QuizOptionDto],
+    maxItems: 4,
+    description:
+      'Multiple-choice: four choices when hostable. True/False: fixed ordered True/False UUIDs 00000000-0000-4000-8000-000000000001 and 00000000-0000-4000-8000-000000000002 with exact text True and False.',
+  })
   @IsArray()
   @ArrayMaxSize(4)
   @IsObject({ each: true })
