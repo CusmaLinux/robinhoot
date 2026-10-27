@@ -1,4 +1,23 @@
+export interface AnswerReceipt {
+  readonly roomId: string;
+  readonly questionId: string;
+  readonly submissionId: string;
+  readonly optionId: string;
+  readonly accepted: true;
+  readonly acceptedAt: number;
+  readonly revision: number;
+}
+export interface AcceptedAnswer {
+  readonly playerId: string;
+  readonly receipt: AnswerReceipt;
+}
+
 export interface LiveRound {
+  readonly scores: readonly {
+    readonly playerId: string;
+    readonly points: number;
+  }[];
+  readonly answers: readonly AcceptedAnswer[];
   readonly commandId: string;
   readonly expectedRevision: number;
   readonly questionIndex: number;
@@ -26,4 +45,5 @@ export interface QuestionState {
   timeUnit: 'milliseconds';
   correctOptionIds?: string[];
   score: number;
+  acceptedAnswer?: AnswerReceipt | null;
 }

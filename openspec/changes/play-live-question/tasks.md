@@ -11,14 +11,14 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 
 ## 2. Accept exactly one timed answer
 
-- [ ] 2.1 Test one valid answer then implement session-bound answer acceptance and acknowledgement; verify room/question/option validation without trusting a submitted player identity.
-- [ ] 2.2 Test lost acknowledgement and identical retries before/after closure, then implement receipt lookup and payload conflict detection; verify at-most-one accepted answer and no duplicate score.
-- [ ] 2.3 Test the exact deadline, delayed timer callback, forged identity, and old-question submission separately; verify all are rejected without state changes and document the stable error codes.
-- [ ] 2.4 Document and test accepted/rejected submission acknowledgements and restored accepted-answer state; verify a client can determine acceptance without receiving early correctness and a different second answer is rejected.
+- [x] 2.1 Test one valid answer then implement session-bound answer acceptance and acknowledgement; verify room/question/option validation without trusting a submitted player identity.
+- [x] 2.2 Test lost acknowledgement and identical retries before/after closure, then implement receipt lookup and payload conflict detection; verify at-most-one accepted answer and no duplicate score.
+- [x] 2.3 Test the exact deadline, delayed timer callback, forged identity, and old-question submission separately; verify all are rejected without state changes and document the stable error codes.
+- [x] 2.4 Document and test accepted/rejected submission acknowledgements and restored accepted-answer state; verify a client can determine acceptance without receiving early correctness and a different second answer is rejected.
 
 ## 3. Close, reveal, and restore
 
-- [ ] 3.1 Test deadline closure and fixed scoring, then implement a one-time reveal transition; verify correct answers get 1000 once, missing/wrong answers get zero, and all-answered does not close early.
+- [x] 3.1 Test deadline closure and fixed scoring, then implement a one-time reveal transition; verify correct answers get 1000 once, missing/wrong answers get zero, and all-answered does not close early.
 - [ ] 3.2 Test full-state restoration after submitting and after reveal; implement consistent revisioned API snapshots and verify current phase/receipt data and rejection of new submissions for a closed question.
 - [ ] 3.3 Test host loss during a round and reauthentication/timeout using fake time; verify the question closes on time, progression waits, and 120-second absence cancels.
 - [ ] 3.4 Run one complete API round with a host and two independent Socket.IO clients, including acknowledgement loss/reconnect; record API acceptance evidence, document events, and verify relevant suites, the API build, and architecture boundaries.
@@ -73,3 +73,34 @@ Tasks 1.1–1.4 are complete. The deadline/no-answer portion of 3.1 is complete;
 keep 3.1 pending for #55's answer acceptance and fixed nonzero scoring. Tasks
 2.1–2.4 and 3.2–3.4 remain for #55–#56, including full active recovery acceptance.
 Do not archive `play-live-question` until those slices and handoffs are verified.
+
+Issue #55 evidence (2026-10-26): implemented session-bound `answer.submit`,
+strict monotonic deadline rejection, one immutable receipt per player/question,
+original accepted retries before/after reveal, and distinct second-answer/ID
+conflicts. Reveal stores fixed 1000-or-zero scores exactly once without early
+closure when everyone answers. Guest sync/restoration/reveal expose only the
+receiving player's receipt/score; roster broadcasts cannot leak private choices.
+
+One-test/minimal-implementation cycles covered initial acceptance, accepted
+retries, second submissions, conflicting ID reuse, exact cutoff, scoring,
+private snapshot receipts, real transport acceptance, lost-ack restoration,
+and personalized reveal. Additional fake-time and transport cases verify invalid
+room/question/option and identity fields, obsolete sessions, simultaneous
+submissions, wrong/missing answers, wall-clock jumps, no early reveal, cancellation,
+and conflicts after reveal. HTTP setup and Socket.IO event/ack examples plus
+component/sequence/state documentation are updated in the linked contract docs.
+
+Verification: 158 unit tests / 20 suites, 128 integration tests / four suites,
+and 98 e2e tests / two suites pass. Build, TypeScript, formatting, strict
+OpenSpec validation, and whitespace checks pass. Read-only ESLint reports zero
+errors and only the two existing auth-test warnings. Database-backed checks
+used only `robinhoot_issue54_test` on loopback port 55454 with dedicated test
+credentials and an explicit test JWT secret. Combined unit and targeted real-client
+coverage measures the live question service at 94.33% lines / 87.5% branches /
+100% functions. Supplying that measured coverage resolves the advisory Fallow
+estimate; its audit passes with zero dead-code, complexity, or duplication findings.
+Architecture direction and Symbol DI were reviewed manually; automated boundary
+rules remain unconfigured. No production database or migration is involved.
+
+Tasks 2.1–2.4 and the remaining scoring portion of 3.1 are complete (9/12 total).
+Keep 3.2–3.4 and archival pending for #56's full active recovery and handoff.

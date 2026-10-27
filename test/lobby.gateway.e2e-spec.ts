@@ -17,7 +17,10 @@ import {
 } from './helpers/setup-test-app';
 import { TestPool } from './helpers/test-pool';
 import { LobbyGateway } from '../src/room/infrastructure/adapters/in/lobby.gateway';
-import type { QuestionState } from '../src/room/domain/live-question';
+import type {
+  AnswerReceipt,
+  QuestionState,
+} from '../src/room/domain/live-question';
 
 // Advances only room time; real TCP, authentication and Socket.IO keep running.
 class ManualLobbyRuntime implements LobbyRuntimePort {
@@ -35,8 +38,11 @@ class ManualLobbyRuntime implements LobbyRuntimePort {
       this.pending.delete(callback);
     };
   }
-  advance(milliseconds: number): void {
+  elapse(milliseconds: number): void {
     this.time += milliseconds;
+  }
+  advance(milliseconds: number): void {
+    this.elapse(milliseconds);
     for (const [callback, at] of this.pending) {
       if (at <= this.time) {
         this.pending.delete(callback);
@@ -230,6 +236,282 @@ describe('Lobby Socket.IO transport', () => {
     clients.splice(0).forEach((client) => client.disconnect());
     await rollbackTransaction(pool);
     if (app) await destroyTestApp(app, db);
+  });
+
+  async function openForGuest() {
+    const host = await connectHost();
+    const guest = await connect();
+    const admitted = admission(await join(guest, 'Alice'));
+    const response = await ack<QuestionState>(host, 'host.start', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 1,
+    });
+    if (!response.ok) throw new Error(response.error.code);
+    const state = response.data;
+    return {
+      host,
+      guest,
+      admitted,
+      state,
+      input: {
+        roomId: room.roomId,
+        questionId: state.questionId,
+        optionId: state.question.options[0].id,
+        submissionId: randomUUID(),
+      },
+    };
+  }
+  it('acknowledges acceptance for a bound guest without early correctness', async () => {
+    const { guest, input } = await openForGuest();
+    const response = await ack<AnswerReceipt>(guest, 'answer.submit', input);
+    expect(response).toEqual({
+      ok: true,
+      data: {
+        ...input,
+        accepted: true,
+        acceptedAt: runtime.now(),
+        revision: 3,
+      },
+    });
+  });
+
+  it('restores the accepted receipt after an acknowledgement is lost', async () => {
+    const { guest, admitted, input } = await openForGuest();
+    // Send without an acknowledgement callback, then use ordered sync as a barrier.
+    guest.emit('answer.submit', input);
+    const synced = await ack<QuestionState>(guest, 'state.sync', {
+      roomId: room.roomId,
+    });
+    expect(synced).toMatchObject({
+      ok: true,
+      data: {
+        phase: 'question_open',
+        score: 0,
+        acceptedAnswer: { ...input, accepted: true },
+      },
+    });
+    if (!synced.ok || !synced.data.acceptedAnswer)
+      throw new Error('Missing receipt');
+    const receipt = synced.data.acceptedAnswer;
+    const replacement = await connect();
+    const restored = admission(
+      await ack(replacement, 'session.restore', {
+        roomId: room.roomId,
+        credential: admitted.credential,
+      }),
+    );
+    expect(restored.state.acceptedAnswer).toEqual(receipt);
+    runtime.advance(20_000);
+    expect(await ack(replacement, 'answer.submit', input)).toEqual({
+      ok: true,
+      data: receipt,
+    });
+    expect(
+      await ack<QuestionState>(replacement, 'state.sync', {
+        roomId: room.roomId,
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: { score: 1000, acceptedAnswer: receipt, phase: 'question_reveal' },
+    });
+  });
+
+  it('reveals each guest score and receipt privately while the host receives public state', async () => {
+    const { host, guest, input } = await openForGuest();
+    await ack(guest, 'answer.submit', input);
+    const hostReveal = new Promise<QuestionState>((resolve) =>
+      host.once('question.revealed', resolve),
+    );
+    const guestReveal = new Promise<QuestionState>((resolve) =>
+      guest.once('question.revealed', resolve),
+    );
+    runtime.advance(20_000);
+    expect(await guestReveal).toMatchObject({
+      score: 1000,
+      acceptedAnswer: { ...input, accepted: true },
+    });
+    expect(await hostReveal).not.toHaveProperty('acceptedAnswer');
+  });
+
+  it.each([
+    [
+      'a submitted player identity',
+      (input: Record<string, string>) => ({ ...input, playerId: randomUUID() }),
+      'INVALID_PAYLOAD',
+    ],
+    [
+      'a submitted credential',
+      (input: Record<string, string>) => ({ ...input, credential: 'forged' }),
+      'INVALID_PAYLOAD',
+    ],
+    [
+      'an invalid submission UUID',
+      (input: Record<string, string>) => ({
+        ...input,
+        submissionId: 'invalid',
+      }),
+      'INVALID_PAYLOAD',
+    ],
+    [
+      'a missing option',
+      (input: Record<string, string>) => ({ ...input, optionId: undefined }),
+      'INVALID_PAYLOAD',
+    ],
+    [
+      'a foreign room',
+      (input: Record<string, string>) => ({ ...input, roomId: randomUUID() }),
+      'FORBIDDEN',
+    ],
+    [
+      'an old question',
+      (input: Record<string, string>) => ({
+        ...input,
+        questionId: randomUUID(),
+      }),
+      'WRONG_QUESTION',
+    ],
+    [
+      'a foreign option',
+      (input: Record<string, string>) => ({ ...input, optionId: randomUUID() }),
+      'INVALID_OPTION',
+    ],
+  ])('rejects %s without accepting an answer', async (_name, change, code) => {
+    const { guest, input } = await openForGuest();
+    expect(await ack(guest, 'answer.submit', change(input))).toMatchObject({
+      ok: false,
+      error: { code },
+    });
+    expect(
+      await ack<QuestionState>(guest, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: { revision: 2, acceptedAnswer: null, score: 0 },
+    });
+  });
+
+  it('rejects a host submitting an answer', async () => {
+    const { host, input } = await openForGuest();
+    expect(await ack(host, 'answer.submit', input)).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN' },
+    });
+  });
+
+  it('rejects an unbound guest submitting an answer', async () => {
+    const { input } = await openForGuest();
+    const stranger = await connect();
+    expect(await ack(stranger, 'answer.submit', input)).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN' },
+    });
+  });
+
+  it('rejects new submissions at the deadline with a delayed timer callback', async () => {
+    const { guest, input } = await openForGuest();
+    runtime.elapse(20_000);
+    expect(await ack(guest, 'answer.submit', input)).toMatchObject({
+      ok: false,
+      error: { code: 'LATE_ANSWER' },
+    });
+    expect(
+      await ack<QuestionState>(guest, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        phase: 'question_reveal',
+        score: 0,
+        acceptedAnswer: null,
+        revision: 3,
+      },
+    });
+  });
+
+  it('serializes simultaneous different submissions into one accepted answer', async () => {
+    const { guest, input, state } = await openForGuest();
+    const second = {
+      ...input,
+      submissionId: randomUUID(),
+      optionId: state.question.options[1].id,
+    };
+    const responses = await Promise.all([
+      ack<AnswerReceipt>(guest, 'answer.submit', input),
+      ack<AnswerReceipt>(guest, 'answer.submit', second),
+    ]);
+    expect(responses[0]).toMatchObject({ ok: true });
+    expect(responses[1]).toMatchObject({
+      ok: false,
+      error: { code: 'ALREADY_ANSWERED' },
+    });
+    expect(
+      await ack(guest, 'answer.submit', {
+        ...input,
+        optionId: second.optionId,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'SUBMISSION_CONFLICT' },
+    });
+    expect(await ack(guest, 'answer.submit', input)).toEqual(responses[0]);
+  });
+
+  it('keeps two guest answers and scores private, including roster broadcasts on restore', async () => {
+    const host = await connectHost();
+    const alice = await connect();
+    const bob = await connect();
+    const a = admission(await join(alice, 'Alice'));
+    await join(bob, 'Bob');
+    const opened = await ack<QuestionState>(host, 'host.start', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 2,
+    });
+    if (!opened.ok) throw new Error(opened.error.code);
+    const state = opened.data;
+    const submissionId = randomUUID(); // IDs are scoped to each player/question.
+    const input = {
+      roomId: room.roomId,
+      questionId: state.questionId,
+      submissionId,
+      optionId: state.question.options[0].id,
+    };
+    const receipt = await ack<AnswerReceipt>(alice, 'answer.submit', input);
+    const bobReceipt = await ack<AnswerReceipt>(bob, 'answer.submit', {
+      ...input,
+      optionId: state.question.options[1].id,
+    });
+    const hostState = await ack<QuestionState>(host, 'state.sync', {
+      roomId: room.roomId,
+    });
+    expect(hostState).not.toHaveProperty('data.acceptedAnswer');
+    const roster = nextState(bob);
+    const replacement = await connect();
+    await ack(replacement, 'session.restore', {
+      roomId: room.roomId,
+      credential: a.credential,
+    });
+    expect(await roster).not.toHaveProperty('acceptedAnswer');
+    expect(await ack(alice, 'answer.submit', input)).toMatchObject({
+      ok: false,
+      error: { code: 'SESSION_REPLACED' },
+    });
+    const aReveal = new Promise<QuestionState>((resolve) =>
+      replacement.once('question.revealed', resolve),
+    );
+    const bReveal = new Promise<QuestionState>((resolve) =>
+      bob.once('question.revealed', resolve),
+    );
+    runtime.advance(20_000);
+    if (!receipt.ok || !bobReceipt.ok) throw new Error('Missing receipts');
+    expect(await aReveal).toMatchObject({
+      score: 1000,
+      acceptedAnswer: receipt.data,
+    });
+    expect(await bReveal).toMatchObject({
+      score: 0,
+      acceptedAnswer: bobReceipt.data,
+    });
+    expect(await ack(replacement, 'answer.submit', input)).toEqual(receipt);
   });
 
   it('opens a safe timed question for a host and two independent guests', async () => {

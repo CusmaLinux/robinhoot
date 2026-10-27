@@ -1,7 +1,7 @@
 # Timed first-question architecture
 
 The [wire contract](../contracts/live-question.md) defines start, safe opening,
-server timing, retries, and no-answer reveal. This extends the
+server timing, private answer receipts, retries, and scored reveal. This extends the
 [lobby boundary](lobby-admission.md) after its completed OpenSpec archive.
 
 `LobbyGateway` validates `host.start`, reuses the per-message JWT guard, checks
@@ -10,7 +10,26 @@ checks current host authority through `LOBBY_LIFECYCLE_PORT`. All round mutation
 are synchronous through `ROOM_STORE_PORT`; no awaited work can interleave a
 phase/revision check and its commit. The existing in-memory store freezes each
 replacement room; round eligibility and the accepted start receipt are frozen
-inside it. Only the first immutable quiz snapshot question is selected.
+inside it. Accepted answers and reveal scores are also frozen inside that round.
+Only the first immutable quiz snapshot question is selected.
+
+`answer.submit` accepts only room/question/submission/option UUIDs. The gateway
+requires a bound guest, while the application derives player identity from the
+current connection in the room aggregate. It validates question, option, and
+eligibility, then checks the player's accepted receipt before deadline/phase.
+An identical retry copies the original receipt; changed reused IDs and second
+submissions conflict. The monotonic clock guards new answers independently of
+timer delivery. Acceptance increments revision once, preserves the deadline,
+and publishes no choice or correctness to other participants.
+
+Reveal computes and stores each eligible player's 1000-or-zero points in the
+same atomic phase/revision transition. Subsequent close callbacks see reveal and
+cannot score again. The event port carries a public host state plus projections
+for current guest connections. The socket adapter excludes those guests from
+the public reveal and sends each subscribed guest only their own receipt/score.
+Sync/restoration project the same private state after authority revalidation.
+Roster publication explicitly selects display fields so restoration cannot
+broadcast a private receipt.
 
 `QUESTION_RUNTIME_PORT` isolates the monotonic decision clock, wall timestamps,
 and cancellable scheduler. `SystemQuestionRuntime` uses Node's monotonic
@@ -49,11 +68,19 @@ sequenceDiagram
   Live->>Timer: Schedule one authoritative deadline
   Live-->>Host: Safe acknowledgement and question.opened
   Live-->>Guests: question.opened, labels A–D, no correctness
+  Guests->>Gateway: answer.submit(roomId, questionId, submissionId, optionId)
+  Gateway->>Live: Submit using current bound connection
+  Live->>Live: Validate identity and payload, check receipt, then deadline
+  Live->>Store: Freeze one answer receipt and increment revision
+  Live-->>Guests: Private acceptance acknowledgement, no correctness
+  Guests->>Gateway: Identical accepted retry, including after reveal
+  Gateway->>Live: Submit using current bound connection
+  Live-->>Guests: Original acceptance receipt
   Timer->>Live: Deadline callback
   Live->>Live: Check room still active and monotonic cutoff
-  Live->>Store: Reveal exactly once and increment revision
-  Live-->>Host: question.revealed, correct option, zero points
-  Live-->>Guests: question.revealed, correct option, zero points
+  Live->>Store: Reveal and store fixed player scores exactly once and increment revision
+  Live-->>Host: question.revealed, correct option, public score zero
+  Live-->>Guests: Private question.revealed, correct option, own receipt and score
 ```
 
 ```mermaid
@@ -62,8 +89,10 @@ stateDiagram-v2
   Lobby --> QuestionOpen: Current owner starts with joined players
   Lobby --> Closed: Idle expiry, host timeout, or owner cancellation
   QuestionOpen --> QuestionOpen: Accepted start retry preserves deadline
-  QuestionOpen --> QuestionReveal: Authoritative monotonic deadline
-  QuestionReveal --> QuestionReveal: Accepted retry returns current reveal
+  QuestionOpen --> QuestionOpen: Accept one private answer, keep deadline
+  QuestionOpen --> QuestionOpen: Identical answer retry returns original receipt
+  QuestionOpen --> QuestionReveal: Monotonic deadline and fixed scoring once
+  QuestionReveal --> QuestionReveal: Start retry returns reveal, answer retry returns original receipt
   QuestionOpen --> Closed: Owner cancellation or host timeout
   QuestionReveal --> Closed: Owner cancellation or host timeout
   Closed --> [*]: Live state removed and bounded closure tombstone retained
@@ -80,6 +109,5 @@ Subscription completes before authority revalidation and question projection;
 start/reveal during a delayed subscription is therefore reflected in the
 acknowledgement. Roster events carry only display state. Complete question
 snapshots use explicit public fields; correct options are projected only at
-reveal. The no-answer slice supplies zero points. Answer receipts/scoring (#55),
-full recovery acceptance (#56), progression, and durable reporting remain later
-slices. The live-question OpenSpec change stays active.
+reveal. Answer acceptance never includes correctness. Full recovery acceptance
+(#56), progression, and durable reporting remain later slices. The live-question OpenSpec change stays active.

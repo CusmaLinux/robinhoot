@@ -77,3 +77,20 @@ export function startInput(payload: unknown) {
     );
   return { ...input, expectedRevision: expectedRevision as number };
 }
+
+export function answerInput(payload: unknown) {
+  const input = object(payload, [
+    'roomId',
+    'questionId',
+    'submissionId',
+    'optionId',
+  ]);
+  if (Object.values(input).some((value) => !isUUID(value)))
+    throw new LobbyError('INVALID_PAYLOAD', 'Answer identifiers must be UUIDs');
+  return {
+    roomId: input.roomId.toLowerCase(),
+    questionId: input.questionId.toLowerCase(),
+    submissionId: input.submissionId.toLowerCase(),
+    optionId: input.optionId.toLowerCase(),
+  };
+}
