@@ -209,7 +209,7 @@ stateDiagram-v2
 
 Cancellation reuses `LobbyLifecyclePort` and `lobby.closed`; both later open and
 reveal close with a reason and invalidate all command/answer authority. Cancelled games produce no completion. Issue #58 adds durable finalization
-below; owned history and finished-room cleanup remain #59. The predecessor main `live-gameplay` spec
+below; [owned history and finished-room cleanup](../contracts/report-history.md) complete #59. The predecessor main `live-gameplay` spec
 was synced and its fully verified change archived before this extension.
 
 ## Durable finalization
@@ -232,7 +232,7 @@ only then calls `GameEventsPort.finished`. The Socket.IO adapter broadcasts
 `game.finished` to the subscribed room channel. Synchronization/restoration use
 the same finished report; a lost event can be recovered without another write.
 Terminal answers/progression/cancellation are rejected. No callback can close
-an in-flight or finished room. Retention/history work is tracked by #59.
+an in-flight or finished room. Finished-room retention is handled separately below.
 
 ```mermaid
 flowchart LR
@@ -292,3 +292,58 @@ stateDiagram-v2
   QuestionReveal --> Closed: Owner cancels before finalization
   Finished --> Finished: Finish retry or current-session sync
 ```
+
+## Owned history and finished-room retention
+
+`ReportController` uses the global account JWT guard and `CurrentUser` identity,
+then invokes `READ_REPORTS_PORT`. `ReadReportsService` depends only on
+`REPORT_HISTORY_PORT`; its Kysely adapter filters both list and read by actual
+owner ID. Foreign UUIDs and missing UUIDs map to the same HTTP 404, including
+for admins. Reads use stored JSONB documents without consulting source quizzes
+or live rooms. `RoomModule` shares one report adapter through Symbol bindings;
+report DTOs document the versioned snapshot independently of editable quiz DTOs.
+
+```mermaid
+flowchart LR
+  Owner[Authenticated professor] --> HTTP[ReportController]
+  HTTP --> Read[ReadReportsPort / service]
+  Read --> History[ReportHistoryPort]
+  History --> Adapter[ReportKyselyAdapter]
+  Adapter --> DB[(Owned immutable PostgreSQL documents)]
+```
+
+```mermaid
+sequenceDiagram
+  participant Owner
+  participant HTTP as ReportController
+  participant Read as ReadReportsService
+  participant DB as ReportKyselyAdapter / PostgreSQL
+  participant Timer as Lobby lifecycle scheduler
+  participant Rooms as Process-local room store
+  Owner->>HTTP: GET /reports with account JWT
+  HTTP->>Read: List using verified owner ID
+  Read->>DB: Owner-filtered documents, newest first
+  DB-->>Owner: Stored reports
+  Timer->>Rooms: Ten minutes after successful finish: remove live aggregate and indexes
+  Note over Rooms: Credentials, receipts and timers expire; no cancellation
+  Owner->>HTTP: GET /reports/:id after cleanup, source deletion or restart
+  HTTP->>Read: Read using verified owner ID and validated UUID
+  Read->>DB: Match owner ID and room/report UUID
+  DB-->>Owner: Original report or indistinguishable 404 for missing/foreign
+```
+
+```mermaid
+stateDiagram-v2
+  Finished --> Finished: Session sync or finish retry within ten minutes
+  Finished --> LiveExpired: Fixed ten-minute deadline or backend restart
+  LiveExpired --> [*]: Room credentials, receipts, owner/PIN indexes and timers released
+  state "Durable owned report remains readable" as Report
+  Report --> Report: Source edit/deletion, live cleanup or backend restart
+```
+
+`completeFinalization` cancels play/absence timers and schedules one fixed
+retention deadline. `settle` handles finished retention before cancellation logic;
+checked reads enforce it even if timer delivery is delayed. Host rebind cannot
+extend it. UUID/entry checks isolate stale callbacks from replacement rooms.
+Cleanup removes the live aggregate and active lifecycle entry without publishing
+`lobby.closed`, creating a closure tombstone or touching the durable repository.

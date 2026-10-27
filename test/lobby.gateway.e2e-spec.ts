@@ -544,6 +544,7 @@ describe('Lobby Socket.IO transport', () => {
     await join(bob, 'Bob');
     await join(absent, 'Carol');
     const first = await openQuestion(host, 'host.start', 3);
+    await answerCorrectly([absent], first);
     await disconnectClient(absent);
     await answerCorrectly([alice, bob], first);
     runtime.advance(20_000);
@@ -565,15 +566,154 @@ describe('Lobby Socket.IO transport', () => {
           standings: [
             { nickname: 'Alice', total: 2000, rank: 1 },
             { nickname: 'Bob', total: 2000, rank: 1 },
-            { nickname: 'Carol', total: 0, rank: 3 },
+            { nickname: 'Carol', total: 1000, rank: 3 },
           ],
           questions: [
-            { eligible: 3, correct: 2, incorrect: 0, missing: 1 },
+            { eligible: 3, correct: 3, incorrect: 0, missing: 0 },
             { eligible: 3, correct: 2, incorrect: 0, missing: 1 },
           ],
         },
       },
     });
+  });
+
+  it('returns chart-ready 25/75 percent facts through owned history after a full game and save retry', async () => {
+    const { host, alice, bob } = await twoQuestionActors();
+    const carol = await connect();
+    const absent = await connect();
+    await join(alice, 'Alice');
+    await join(bob, 'Bob');
+    await join(carol, 'Carol');
+    await join(absent, 'Disconnected');
+    const first = await openQuestion(host, 'host.start', 4);
+    await disconnectClient(absent);
+    await answerCorrectly([alice], first);
+    expect(
+      await ack(bob, 'answer.submit', {
+        roomId: room.roomId,
+        questionId: first.questionId,
+        optionId: first.question.options[1].id,
+        submissionId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: true });
+    runtime.advance(20_000);
+    const second = await openQuestion(
+      host,
+      'host.next',
+      (await readQuestion(host)).revision,
+    );
+    await answerCorrectly([alice, bob, carol], second);
+    runtime.advance(30_000);
+    const repository = app.get<ReportRepositoryPort>(REPORT_REPOSITORY_PORT);
+    jest
+      .spyOn(repository, 'saveOnce')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    const command = {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: (await readQuestion(host)).revision,
+    };
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'REPORT_SAVE_FAILED', retryable: true },
+    });
+    const broadcast = new Promise<FinishedGame>((resolve) =>
+      alice.once('game.finished', resolve),
+    );
+    const finished = await ack<FinishedGame>(host, 'host.finish', command);
+    if (!finished.ok) throw new Error(finished.error.code);
+    expect(await broadcast).toEqual(finished.data);
+    const response = await request(server)
+      .get(`/reports/${room.roomId}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(response.body).toEqual(finished.data.report);
+    expect((response.body as FinishedGame['report']).questions).toEqual([
+      {
+        questionId: first.questionId,
+        eligible: 4,
+        correct: 1,
+        incorrect: 1,
+        missing: 2,
+        accuracy: 25,
+      },
+      {
+        questionId: second.questionId,
+        eligible: 4,
+        correct: 3,
+        incorrect: 0,
+        missing: 1,
+        accuracy: 75,
+      },
+    ]);
+    expect(
+      (
+        await request(server)
+          .get('/reports')
+          .auth(token, { type: 'bearer' })
+          .expect(200)
+      ).body,
+    ).toEqual([finished.data.report]);
+  });
+
+  async function denyHistoricalCredential(credential: string) {
+    for (const path of ['/reports', `/reports/${room.roomId}`]) {
+      await request(server)
+        .get(path)
+        .auth(credential, { type: 'bearer' })
+        .expect(401);
+    }
+  }
+
+  it('expires finished live credentials without changing owned history or cancelling completion', async () => {
+    const { host, guest, admitted, command } = await finalReveal();
+    const finished = await ack<FinishedGame>(host, 'host.finish', command);
+    if (!finished.ok) throw new Error(finished.error.code);
+    await request(server)
+      .put(`/quizzes/${finished.data.report.quiz.sourceQuizId}`)
+      .auth(token, { type: 'bearer' })
+      .send({
+        title: 'Edited after completion',
+        questions: finished.data.report.quiz.questions,
+      })
+      .expect(200);
+    await request(server)
+      .delete(`/quizzes/${finished.data.report.quiz.sourceQuizId}`)
+      .auth(token, { type: 'bearer' })
+      .expect(204);
+    const closures: unknown[] = [];
+    guest.on('lobby.closed', (value: unknown) => closures.push(value));
+    runtime.advance(599_999);
+    expect(
+      await ack(guest, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: true, data: { report: finished.data.report } });
+    runtime.advance(1);
+    expect(
+      await ack(guest, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({ ok: false });
+    const returning = await connect();
+    expect(
+      await ack(returning, 'session.restore', {
+        roomId: room.roomId,
+        credential: admitted.credential,
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'INVALID_CREDENTIAL' } });
+    await denyHistoricalCredential(admitted.credential);
+    expect(
+      (
+        await request(server)
+          .get(`/reports/${room.roomId}`)
+          .auth(token, { type: 'bearer' })
+          .expect(200)
+      ).body,
+    ).toEqual(finished.data.report);
+    expect(closures).toEqual([]);
+  });
+
+  it('denies current room credentials access to historical endpoints', async () => {
+    const { host, admitted, command } = await finalReveal();
+    await ack(host, 'host.finish', command);
+    await denyHistoricalCredential(admitted.credential);
   });
   it('revalidates authentication before finish and denies guests and foreign accounts', async () => {
     const { host, guest, command } = await finalReveal();

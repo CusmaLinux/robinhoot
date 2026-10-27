@@ -3,8 +3,7 @@
 Issue [#58](https://github.com/CusmaLinux/robinhoot/issues/58) implements tasks
 2.1–2.4 of `finish-game-with-results`. It builds on the
 [HTTP quiz/room setup and Socket.IO progression contract](game-progression.md).
-Owned `GET /reports` history, restart discovery, and bounded finished-room
-cleanup remain issue #59; the overall OpenSpec change stays open.
+Issue #59 adds [owned history, restart discovery and ten-minute finished-room cleanup](report-history.md).
 
 ## Finish command and event
 
@@ -162,7 +161,7 @@ durable report, which the idempotent retry returns; it never yields both a
 cancellation broadcast and a completion broadcast for the same attempt.
 
 A backend crash does not recover unsaved live rooms. Successfully saved reports
-remain in PostgreSQL; owner history/discovery and live retention are #59.
+remain in PostgreSQL and are discoverable through [owned history](report-history.md).
 The additive report migration refuses automatic down-migration to protect
 saved results; disable new finalization and back up/export results before any
 manual rollback. No production migration or deployment is part of this PR.

@@ -15,6 +15,7 @@ import {
 
 interface ActiveLobby {
   expiresAt: number;
+  finishedUntil?: number;
   cancelExpiry: () => void;
   cancelQuestion?: () => void;
   connectionId: string | null;
@@ -72,13 +73,25 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
     entry.cancelQuestion?.();
     entry.absence?.cancel();
     entry.absence = undefined;
+    entry.finishedUntil = this.runtime.now() + 10 * 60_000;
     entry.expiresAt = Infinity;
+    entry.cancelExpiry = this.runtime.schedule(entry.finishedUntil, () => {
+      if (this.active.get(roomId) === entry) this.settle(roomId);
+    });
   }
   private settle(roomId: string): void {
     const room = this.rooms.findById(roomId);
-    if (room?.finalizing || room?.phase === 'finished') return;
+    if (room?.finalizing) return;
     const entry = this.active.get(roomId);
     if (!entry) return;
+    if (room?.phase === 'finished') {
+      if (this.runtime.now() >= entry.finishedUntil!) {
+        entry.cancelExpiry();
+        this.active.delete(roomId);
+        this.rooms.remove(roomId);
+      }
+      return;
+    }
     const reason = this.expirationReason(entry);
     if (reason) this.close(roomId, reason);
   }
@@ -131,6 +144,7 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
     });
   }
   private owned(roomId: string, ownerId: string): void {
+    this.settle(roomId);
     this.prune();
     const owner =
       this.rooms.findById(roomId)?.host.ownerId ??

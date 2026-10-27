@@ -18,10 +18,10 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 
 ## 3. Retrieve report data
 
-- [ ] 3.1 Test owner-filtered list/read endpoints then implement GET /reports and /reports/:id; verify foreign user/admin and guest-credential historical reads are denied and document the API.
-- [ ] 3.2 Document and test final standings, owned history responses, and question difficulty data; verify a four-player 1-correct/1-wrong/2-missing response includes 25 percent accuracy and all counts for the separate UI's charts.
-- [ ] 3.3 Test report reload after source deletion/backend restart and bounded FINISHED-room cleanup; verify stored results remain readable while expired live credentials cannot retrieve history.
-- [ ] 3.4 Demonstrate a complete two-question game through HTTP/Socket.IO with report retrieval, tie behavior, and storage failure retry; record API evidence and verify relevant suites, the API build, and architecture boundaries.
+- [x] 3.1 Test owner-filtered list/read endpoints then implement GET /reports and /reports/:id; verify foreign user/admin and guest-credential historical reads are denied and document the API.
+- [x] 3.2 Document and test final standings, owned history responses, and question difficulty data; verify a four-player 1-correct/1-wrong/2-missing response includes 25 percent accuracy and all counts for the separate UI's charts.
+- [x] 3.3 Test report reload after source deletion/backend restart and bounded FINISHED-room cleanup; verify stored results remain readable while expired live credentials cannot retrieve history.
+- [x] 3.4 Demonstrate a complete two-question game through HTTP/Socket.IO with report retrieval, tie behavior, and storage failure retry; record API evidence and verify relevant suites, the API build, and architecture boundaries.
 
 ## Workflow follow-up
 
@@ -150,3 +150,46 @@ group are inherited from the base. All 197 unit tests and all 130 e2e tests pass
 the e2e run used only the isolated `robinhoot_issue58_test` database. Build,
 source/test TypeScript, formatting, whitespace, and read-only ESLint pass;
 ESLint retains only the two existing auth-test warnings.
+
+
+## Issue #59 implementation evidence (2026-10-27)
+
+Tasks 3.1–3.4 are complete: 12/12 overall. Owner-filtered history now uses
+account JWT identity and separate read ports with shared Kysely Symbol DI.
+Foreign users/admins receive an indistinguishable missing/foreign 404; current
+and expired room credentials cannot authenticate history. OpenAPI includes the
+version-1 immutable report, snapshot, standings and all difficulty fields.
+
+Real HTTP/Socket.IO acceptance verifies a complete two-question game, exact
+2000/2000/1000 totals with 1/1/3 competition ranks, stable nickname ordering,
+and four-player 25/75 percent question facts including disconnected players.
+A storage failure returns a retryable error before the original finish retry
+completes; owner history equals guest completion. Source edits/deletion and
+fixed ten-minute FINISHED cleanup leave stored results unchanged. Independent
+backend instances reopen committed reports after source deletion. Fake-time
+checks verify the exact retention boundary, no extension on return, delayed
+callbacks, timer/index release and stale callback isolation.
+
+Final verification: 199 unit tests / 22 suites, 142 integration tests / six
+suites, and 133 e2e tests / two suites pass. Build, test TypeScript, source/test
+formatting, strict OpenSpec validation and whitespace checks pass. Read-only
+ESLint has zero errors and the two existing auth-test warnings. Database-backed
+checks exclusively use the dedicated loopback `robinhoot_issue58_test` database
+on port 55458 with explicit test credentials and JWT secret. No production
+migration or data access was performed.
+
+The Fallow audit against `origin/main` passes with no introduced dead code,
+complexity, duplication, styling or diff-risk findings. Its four inherited
+complexity estimates remain advisory; no new suppression/configuration was
+added. No import cycles were found. Architecture boundary/policy rules are
+unconfigured, so those counts are not measured guarantees; imports, Symbol DI,
+source-independent history and lifecycle/persistence separation were reviewed
+directly.
+
+The [history contract](../../../docs/contracts/report-history.md) documents
+ranking/difficulty examples, errors, response ordering, expiry, verification and
+the API/UI handoff. Component, sequence and state diagrams are updated in
+[the architecture](../../../docs/architecture/live-question.md). API work is
+ready for archival review; UI screens and charts, durable-data retention policy,
+and joint professor rehearsal remain external follow-up. The change has not
+been archived by this issue implementation.
