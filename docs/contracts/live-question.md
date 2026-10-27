@@ -163,8 +163,8 @@ through the single-process immutable room store.
 New admissions (including lobby join retries) are rejected after opening with
 `ROOM_CLOSED`; existing players retain their credentials. `state.sync`,
 `session.restore`, and owner `host.bind` use the existing authority and subscribed
-snapshot rules and include the current question fields while playing. The
-broader active-round recovery acceptance work remains #56.
+snapshot rules and include the current question fields while playing. See the [active recovery rehearsal](active-game-recovery.md) for open/reveal
+restoration, owner reauthentication, cancellation, and exact error transcripts.
 `lobby.roster` events remain display-only and do not replace a complete question
 snapshot. Clients compare revisions across roster and question events and
 request `state.sync` after missed updates.

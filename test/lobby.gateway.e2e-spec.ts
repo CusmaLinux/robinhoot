@@ -1,6 +1,7 @@
 import type { LobbyRuntimePort } from '../src/room/application/ports/out/lobby-runtime.port';
 
 import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Kysely } from 'kysely';
 import { Server } from 'http';
 import { randomUUID } from 'crypto';
@@ -87,7 +88,7 @@ describe('Lobby Socket.IO transport', () => {
     );
     return host;
   }
-  async function disconnectHost(host: Socket): Promise<void> {
+  async function disconnectClient(host: Socket): Promise<void> {
     const disconnected = new Promise<void>((resolve) =>
       app
         .get(LobbyGateway)
@@ -262,6 +263,283 @@ describe('Lobby Socket.IO transport', () => {
       },
     };
   }
+  it('restores an unanswered player after reveal without accepting a new closed-question answer', async () => {
+    const { guest, admitted, state, input } = await openForGuest();
+    await disconnectClient(guest);
+    runtime.advance(20_000);
+    const returning = await connect();
+    const restored = admission(
+      await ack(returning, 'session.restore', {
+        roomId: room.roomId,
+        credential: admitted.credential,
+      }),
+    );
+    expect(restored).toMatchObject({
+      playerId: admitted.playerId,
+      state: {
+        phase: 'question_reveal',
+        deadline: state.deadline,
+        acceptedAnswer: null,
+        score: 0,
+        roster: [
+          { playerId: admitted.playerId, nickname: 'Alice', connected: true },
+        ],
+      },
+    });
+    expect(await ack(returning, 'answer.submit', input)).toMatchObject({
+      ok: false,
+      error: { code: 'LATE_ANSWER' },
+    });
+    expect(await ack(returning, 'state.sync', { roomId: room.roomId })).toEqual(
+      {
+        ok: true,
+        data: restored.state,
+      },
+    );
+  });
+
+  it.each(['session.restore', 'state.sync', 'host.bind'])(
+    'returns one current private or public snapshot when reveal happens during %s subscription',
+    async (event) => {
+      const { guest, admitted, state, input } = await openForGuest();
+      const accepted = await ack<AnswerReceipt>(guest, 'answer.submit', input);
+      if (!accepted.ok) throw new Error(accepted.error.code);
+      const client =
+        event === 'state.sync'
+          ? guest
+          : await connect(event === 'host.bind' ? { token } : {});
+      const result = await mutateDuringSubscription<Admission | LobbyState>(
+        client,
+        event,
+        event === 'session.restore'
+          ? { roomId: room.roomId, credential: admitted.credential }
+          : { roomId: room.roomId },
+        () => {
+          // Advance authoritative time while intentionally withholding timer callbacks.
+          runtime.elapse(20_000);
+          return Promise.resolve();
+        },
+      );
+      if (!result.ok) throw new Error(result.error.code);
+      const snapshot = 'state' in result.data ? result.data.state : result.data;
+      expect(snapshot).toMatchObject({
+        phase: 'question_reveal',
+        deadline: state.deadline,
+        revision:
+          accepted.data.revision + (event === 'session.restore' ? 2 : 1),
+      });
+      if (event === 'host.bind') {
+        expect(snapshot).not.toHaveProperty('acceptedAnswer');
+        expect(snapshot.score).toBe(0);
+      } else {
+        expect(snapshot).toMatchObject({
+          acceptedAnswer: accepted.data,
+          score: 1000,
+        });
+      }
+      expect(await ack(client, 'state.sync', { roomId: room.roomId })).toEqual({
+        ok: true,
+        data: snapshot,
+      });
+    },
+  );
+
+  it('rehearses host and two-guest recovery through lost acknowledgement, reveal and owner reauthentication', async () => {
+    const host = await connectHost();
+    const alice = await connect();
+    const bob = await connect();
+    const first = admission(await join(alice, 'Alice'));
+    const second = admission(await join(bob, 'Bob'));
+    const started = await ack<QuestionState>(host, 'host.start', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: 2,
+    });
+    if (!started.ok) throw new Error(started.error.code);
+    const answer = {
+      roomId: room.roomId,
+      questionId: started.data.questionId,
+      submissionId: randomUUID(),
+      optionId: started.data.question.options[0].id,
+    };
+    alice.emit('answer.submit', answer); // Deliberately lose the acknowledgement.
+    const accepted = await ack<QuestionState>(alice, 'state.sync', {
+      roomId: room.roomId,
+    });
+    if (!accepted.ok || !accepted.data.acceptedAnswer)
+      throw new Error('Missing acceptance');
+    const receipt = accepted.data.acceptedAnswer;
+    await disconnectClient(alice);
+    const returningAlice = await connect();
+    const restoredOpen = admission(
+      await ack(returningAlice, 'session.restore', {
+        roomId: room.roomId,
+        credential: first.credential,
+      }),
+    );
+    expect(restoredOpen).toMatchObject({
+      playerId: first.playerId,
+      state: {
+        phase: 'question_open',
+        deadline: started.data.deadline,
+        acceptedAnswer: receipt,
+        score: 0,
+      },
+    });
+    expect(restoredOpen.state).not.toHaveProperty('correctOptionIds');
+    expect(await ack(bob, 'state.sync', { roomId: room.roomId })).toMatchObject(
+      {
+        ok: true,
+        data: { acceptedAnswer: null, score: 0 },
+      },
+    );
+    await disconnectClient(host);
+    await disconnectClient(returningAlice);
+    runtime.advance(20_000);
+    const afterReveal = await connect();
+    const restoredReveal = admission(
+      await ack(afterReveal, 'session.restore', {
+        roomId: room.roomId,
+        credential: first.credential,
+      }),
+    );
+    expect(restoredReveal).toMatchObject({
+      playerId: first.playerId,
+      state: {
+        phase: 'question_reveal',
+        deadline: started.data.deadline,
+        acceptedAnswer: receipt,
+        score: 1000,
+      },
+    });
+    expect(restoredReveal.state.revision).toBeGreaterThan(
+      restoredOpen.state.revision,
+    );
+    expect(await ack(afterReveal, 'answer.submit', answer)).toEqual({
+      ok: true,
+      data: receipt,
+    });
+    expect(
+      await ack(bob, 'answer.submit', {
+        ...answer,
+        submissionId: randomUUID(),
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'LATE_ANSWER' },
+    });
+
+    const jwt = app.get(JwtService);
+    const claims = jwt.verify<{
+      sub: string;
+      email: string;
+      roles: string[];
+      tokenVersion: number;
+    }>(token);
+    const { sub, email, roles, tokenVersion } = claims;
+    const expiredToken = jwt.sign(
+      { sub, email, roles, tokenVersion },
+      { expiresIn: -1 },
+    );
+    const expiredHost = await connect({ token: expiredToken });
+    expect(
+      await ack(expiredHost, 'host.bind', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'UNAUTHORIZED' },
+    });
+    const foreign = await connect({ token: await loginAccount() });
+    expect(
+      await ack(foreign, 'host.bind', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN' },
+    });
+    runtime.advance(99_999);
+    const login = await request(server)
+      .post('/auth/login')
+      .send({ email, password: 'TestPassword123!' })
+      .expect(200);
+    const returningHost = await connect({
+      token: (login.body as { accessToken: string }).accessToken,
+    });
+    const rebound = await ack<LobbyState>(returningHost, 'host.bind', {
+      roomId: room.roomId,
+    });
+    expect(rebound).toMatchObject({
+      ok: true,
+      data: {
+        phase: 'question_reveal',
+        revision: restoredReveal.state.revision,
+        deadline: started.data.deadline,
+        score: 0,
+        roster: [{ playerId: first.playerId }, { playerId: second.playerId }],
+      },
+    });
+    if (!rebound.ok) throw new Error(rebound.error.code);
+    expect(rebound.data).not.toHaveProperty('acceptedAnswer');
+    runtime.advance(1);
+    expect(
+      await ack(afterReveal, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: { phase: 'question_reveal', score: 1000, acceptedAnswer: receipt },
+    });
+  });
+
+  it('cancels active reveal at the original host cutoff after failed expired-token returns', async () => {
+    const { host, guest, admitted, input } = await openForGuest();
+    const accepted = await ack<AnswerReceipt>(guest, 'answer.submit', input);
+    if (!accepted.ok) throw new Error(accepted.error.code);
+    await disconnectClient(host);
+    runtime.advance(119_999);
+    const jwt = app.get(JwtService);
+    const { sub, email, roles, tokenVersion } = jwt.verify<{
+      sub: string;
+      email: string;
+      roles: string[];
+      tokenVersion: number;
+    }>(token);
+    const expired = await connect({
+      token: jwt.sign({ sub, email, roles, tokenVersion }, { expiresIn: -1 }),
+    });
+    expect(
+      await ack(expired, 'host.bind', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'UNAUTHORIZED' },
+    });
+    const closed = new Promise((resolve) =>
+      guest.once('lobby.closed', resolve),
+    );
+    runtime.elapse(1); // Hold cancellation callback: owner return must enforce the cutoff.
+    const returningHost = await connect({ token });
+    expect(
+      await ack(returningHost, 'host.bind', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_CLOSED', message: 'HOST_TIMEOUT' },
+    });
+    expect(await closed).toMatchObject({
+      phase: 'closed',
+      reason: 'HOST_TIMEOUT',
+    });
+    expect(await ack(guest, 'answer.submit', input)).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_CLOSED', message: 'HOST_TIMEOUT' },
+    });
+    const returningGuest = await connect();
+    expect(
+      await ack(returningGuest, 'session.restore', {
+        roomId: room.roomId,
+        credential: admitted.credential,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: 'ROOM_CLOSED', message: 'HOST_TIMEOUT' },
+    });
+  });
+
   it('acknowledges acceptance for a bound guest without early correctness', async () => {
     const { guest, input } = await openForGuest();
     const response = await ack<AnswerReceipt>(guest, 'answer.submit', input);
@@ -824,7 +1102,7 @@ describe('Lobby Socket.IO transport', () => {
     const b = await connect();
     const first = admission(await join(a, 'Alice'));
     await join(b, 'Bob');
-    await disconnectHost(host);
+    await disconnectClient(host);
     runtime.advance(119_999);
     const returned = await connectHost();
     const synced = await ack<LobbyState>(returned, 'state.sync', {
@@ -861,7 +1139,7 @@ describe('Lobby Socket.IO transport', () => {
       (client) =>
         new Promise((resolve) => client.once('lobby.closed', resolve)),
     );
-    await disconnectHost(host);
+    await disconnectClient(host);
     runtime.advance(120_000);
     expect(await Promise.all(closed)).toEqual([
       expect.objectContaining({ reason: 'HOST_TIMEOUT' }),

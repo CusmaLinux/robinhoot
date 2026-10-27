@@ -19,9 +19,9 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 ## 3. Close, reveal, and restore
 
 - [x] 3.1 Test deadline closure and fixed scoring, then implement a one-time reveal transition; verify correct answers get 1000 once, missing/wrong answers get zero, and all-answered does not close early.
-- [ ] 3.2 Test full-state restoration after submitting and after reveal; implement consistent revisioned API snapshots and verify current phase/receipt data and rejection of new submissions for a closed question.
-- [ ] 3.3 Test host loss during a round and reauthentication/timeout using fake time; verify the question closes on time, progression waits, and 120-second absence cancels.
-- [ ] 3.4 Run one complete API round with a host and two independent Socket.IO clients, including acknowledgement loss/reconnect; record API acceptance evidence, document events, and verify relevant suites, the API build, and architecture boundaries.
+- [x] 3.2 Test full-state restoration after submitting and after reveal; implement consistent revisioned API snapshots and verify current phase/receipt data and rejection of new submissions for a closed question.
+- [x] 3.3 Test host loss during a round and reauthentication/timeout using fake time; verify the question closes on time, progression waits, and 120-second absence cancels.
+- [x] 3.4 Run one complete API round with a host and two independent Socket.IO clients, including acknowledgement loss/reconnect; record API acceptance evidence, document events, and verify relevant suites, the API build, and architecture boundaries.
 
 ## Workflow follow-up
 
@@ -104,3 +104,33 @@ rules remain unconfigured. No production database or migration is involved.
 
 Tasks 2.1–2.4 and the remaining scoring portion of 3.1 are complete (9/12 total).
 Keep 3.2–3.4 and archival pending for #56's full active recovery and handoff.
+
+Issue #56 evidence (2026-10-26): predecessor #55 is merged at `972782b`.
+Re-read the actual main predecessor specifications and this change's proposal,
+design, delta specification, and tasks before editing. Added a failing regression
+for a public host snapshot at the absence cutoff with cancellation callbacks
+withheld, then enforced lifecycle availability for both role projections. The
+public application snapshot now returns the retained closure error after room
+cancellation, matching the existing guest behavior.
+
+Fake-time checks verify delayed cutoff enforcement and owner return at 119999 ms
+preserving the original scored reveal. Six additional real-client cases verify
+unanswered restoration after reveal, reveal inside each of restore/sync/bind
+subscription, the integrated host/two-guest recovery rehearsal, and failed expired
+host return followed by exact-cutoff cancellation. The integrated flow includes
+lost answer acknowledgement, guest disconnects, open/reveal restoration, role
+privacy, rejected closed-question answers, foreign/expired host errors, and fresh
+owner HTTP login. Contract transcripts and recovery sequence/state documentation
+are linked from `docs/contracts/active-game-recovery.md`.
+
+Verification: 160 unit tests, 128 integration tests, and 104 e2e tests pass.
+Build, TypeScript, read-only ESLint (zero errors, only the two existing auth-test
+warnings), formatting, strict change validation, and whitespace checks pass.
+Database-backed suites use only `robinhoot_issue54_test` on loopback port 55454
+with dedicated test credentials and an explicit test JWT secret. The production
+change reuses the lifecycle port; domain dependencies, Symbol DI, synchronous
+room mutation, and adapter boundaries remain intact, reviewed in the diff.
+No schema migration, production database, UI implementation, or deployment.
+
+Tasks 3.2–3.4 are complete (12/12 total). API verification and contract handoff are
+recorded; retain the change for PR review before its separate final archival.

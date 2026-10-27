@@ -219,9 +219,10 @@ export class LiveQuestionService implements LiveQuestionPort {
   }
   snapshot(roomId: string, connectionId?: string): QuestionState | null {
     this.close(roomId);
+    // Public host projections must settle lifecycle deadlines too, including at reveal.
+    this.lifecycle.assertOpen(roomId);
     const room = this.rooms.findById(roomId);
     if (connectionId) {
-      this.lifecycle.assertOpen(roomId);
       if (!room?.guests.some((g) => g.connectionId === connectionId))
         throw new LobbyError(
           'SESSION_REPLACED',
