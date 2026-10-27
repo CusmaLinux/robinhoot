@@ -1,3 +1,4 @@
+import { createServer } from 'node:net';
 import { readFileSync } from 'node:fs';
 import { join as joinPath } from 'node:path';
 import type { GameReport } from '../src/room/domain/game-report';
@@ -194,27 +195,34 @@ describe('Lobby Socket.IO transport', () => {
     return (draft.body as { id: string }).id;
   }
 
-  async function createRoom(token: string, durations = [20], truthIndex = -1) {
+  async function createRoom(
+    token: string,
+    durations = [20],
+    truthIndex = -1,
+    image?: { imageUrl: string; imageDescription?: string },
+  ) {
     const quizId = await createDraftId(token);
     const options = ['A', 'B', 'C', 'D'].map((text) => ({
       id: randomUUID(),
       text,
     }));
+    const questions = durations.map((durationSeconds, index) => ({
+      id: randomUUID(),
+      type: index === truthIndex ? 'true-false' : 'multiple-choice',
+      prompt: `Secret question ${index + 1}?`,
+      options: index === truthIndex ? TRUE_FALSE_OPTIONS : options,
+      correctOptionIds: [
+        index === truthIndex ? TRUE_FALSE_OPTIONS[1].id : options[0].id,
+      ],
+      durationSeconds,
+    }));
+    if (questions[0]) Object.assign(questions[0], image);
     await request(server)
       .put(`/quizzes/${quizId}`)
       .auth(token, { type: 'bearer' })
       .send({
         title: 'Private answer key',
-        questions: durations.map((durationSeconds, index) => ({
-          id: randomUUID(),
-          type: index === truthIndex ? 'true-false' : 'multiple-choice',
-          prompt: `Secret question ${index + 1}?`,
-          options: index === truthIndex ? TRUE_FALSE_OPTIONS : options,
-          correctOptionIds: [
-            index === truthIndex ? TRUE_FALSE_OPTIONS[1].id : options[0].id,
-          ],
-          durationSeconds,
-        })),
+        questions,
       })
       .expect(200);
     const created = await request(server)
@@ -598,6 +606,8 @@ describe('Lobby Socket.IO transport', () => {
         label: String.fromCharCode(65 + index),
       })),
     );
+    expect(opened.question).not.toHaveProperty('imageUrl');
+    expect(opened.question).not.toHaveProperty('imageDescription');
     await answerCorrectly([guest], opened);
     const finished = await completeAfter(host, 20_000);
     expect(finished.report).toMatchObject({
@@ -607,15 +617,72 @@ describe('Lobby Socket.IO transport', () => {
     });
   });
 
+  it('opens and accepts answers with public image metadata without contacting the image host', async () => {
+    let imageConnections = 0;
+    const imageHost = createServer((socket) => {
+      imageConnections++;
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) =>
+      imageHost.listen(0, '127.0.0.1', resolve),
+    );
+    try {
+      const address = imageHost.address();
+      if (!address || typeof address === 'string')
+        throw new Error('Missing image address');
+      const image = {
+        imageUrl: `https://127.0.0.1:${address.port}/unavailable.png`,
+        imageDescription: 'An unavailable cell diagram',
+      };
+      token = await loginAccount();
+      room = await createRoom(token, [10], -1, image);
+      const host = await connectHost();
+      const guest = await connect();
+      await join(guest, 'Image player');
+      const broadcast = new Promise<QuestionState>((resolve) =>
+        guest.once('question.opened', resolve),
+      );
+      const opened = await openQuestion(host, 'host.start', 1);
+      expect(opened.question).toMatchObject(image);
+      expect((await broadcast).question).toMatchObject(image);
+      expect(await readQuestion(guest)).toMatchObject({ question: image });
+      expect(opened).not.toHaveProperty('correctOptionIds');
+      expect(opened.question).not.toHaveProperty('correctOptionIds');
+      await answerCorrectly([guest], opened);
+      const finished = await completeAfter(host, 10_000);
+      expect(finished.report).toMatchObject({
+        version: 2,
+        quiz: { version: 2 },
+      });
+      expect(finished.report.quiz.questions[0]).toMatchObject(image);
+      expect(finished.report.standings[0].total).toBe(1000);
+      expect(imageConnections).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        imageHost.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
   it('plays a mixed game with fixed truth labels and shared deadline/reveal semantics', async () => {
     token = await loginAccount();
-    const mixedRoom = await createRoom(token, [10, 20], 0);
+    const originalImage = {
+      imageUrl: 'https://unreachable.invalid/original.png?version=1#cell',
+      imageDescription: 'Original cell diagram',
+    };
+    const mixedRoom = await createRoom(token, [10, 20], 0, originalImage);
     room = mixedRoom;
-    // Edit the source type/choices after room creation; play must use the frozen original.
+    // Edit the same source question after room creation; play keeps its original snapshot.
+    const source = await request(server)
+      .get(`/quizzes/${mixedRoom.quizId}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
     const replacement = {
-      id: randomUUID(),
+      id: (source.body as { questions: { id: string }[] }).questions[0].id,
       type: 'multiple-choice',
       prompt: 'Edited source',
+      imageUrl: 'https://unreachable.invalid/edited.png',
+      imageDescription: 'Edited diagram',
       options: ['A', 'B', 'C', 'D'].map((text) => ({ id: randomUUID(), text })),
       correctOptionIds: [] as string[],
       durationSeconds: 30,
@@ -635,6 +702,7 @@ describe('Lobby Socket.IO transport', () => {
     await join(missing, 'Carol');
     const first = await openQuestion(host, 'host.start', 3);
     expect(first.question).toMatchObject({
+      ...originalImage,
       type: 'true-false',
       options: [
         { ...TRUE_FALSE_OPTIONS[0], label: 'True' },
@@ -681,6 +749,8 @@ describe('Lobby Socket.IO transport', () => {
     expect(await ack(guest, 'answer.submit', input)).toEqual(receipt);
     const second = await openQuestion(host, 'host.next', reveal.revision);
     expect(second.question.type).toBe('multiple-choice');
+    expect(second.question).not.toHaveProperty('imageUrl');
+    expect(second.question).not.toHaveProperty('imageDescription');
     expect(second.question.options.map((option) => option.label)).toEqual([
       'A',
       'B',
@@ -715,6 +785,7 @@ describe('Lobby Socket.IO transport', () => {
       .expect(200);
     expect(history.body).toEqual(finished.report);
     expect(finished.report.quiz.questions[0]).toMatchObject({
+      ...originalImage,
       type: 'true-false',
       prompt: 'Secret question 1?',
       options: TRUE_FALSE_OPTIONS,

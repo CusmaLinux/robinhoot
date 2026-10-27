@@ -113,3 +113,14 @@ Domain readiness checks truth mappings as well as completeness. The immutable
 room snapshot reader emits version 2 when any question is True/False; reports
 retain that version and the original content. Legacy multiple-choice storage
 and version-1 reports remain readable and playable without backfill.
+
+## Optional image metadata
+
+[Question images](../contracts/question-images.md) add bounded `imageUrl` and
+`imageDescription` strings to the existing JSONB question document. The inbound
+DTO calls the framework-free URL predicate; domain structure/readiness checks
+also prevent malformed persisted references from becoming hostable. The same
+ports and owner-scoped adapter save/read the strings verbatim. The save sequence
+validates media before its UPDATE, so invalid metadata keeps the prior saved
+state in the state diagram above. Omitting metadata on full replacement removes
+it only from the editable source. There are no new providers, tables or migrations.

@@ -1,3 +1,4 @@
+import { isQuestionImageUrl } from '../../../domain/question-image';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -10,10 +11,11 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateBy,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 class QuizOptionDto {
   @ApiProperty({ format: 'uuid' })
@@ -39,6 +41,29 @@ export class QuizQuestionDto {
   @IsString()
   @MaxLength(2000)
   prompt!: string;
+
+  @ApiPropertyOptional({
+    format: 'uri',
+    maxLength: 2048,
+    description:
+      'Optional HTTPS URL without credentials. Stored verbatim; never fetched by the API. Omit to remove on full replacement.',
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @ValidateBy({
+    name: 'isQuestionImageUrl',
+    validator: {
+      validate: isQuestionImageUrl,
+      defaultMessage: () =>
+        '$property must be an HTTPS URL of at most 2048 characters without credentials',
+    },
+  })
+  imageUrl?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsString()
+  @MaxLength(500)
+  imageDescription?: string;
 
   @ApiProperty({
     type: [QuizOptionDto],

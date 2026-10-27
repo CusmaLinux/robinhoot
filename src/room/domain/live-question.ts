@@ -39,6 +39,8 @@ export interface QuestionState {
     id: string;
     type: 'multiple-choice' | 'true-false';
     prompt: string;
+    imageUrl?: string;
+    imageDescription?: string;
     options: { id: string; label: string; text: string }[];
   };
   eligiblePlayerIds: string[];

@@ -2,7 +2,7 @@
 
 Issue [#60](https://github.com/CusmaLinux/robinhoot/issues/60) extends the
 [quiz authoring](quiz-drafts.md), [gameplay](live-question.md) and
-[owned reports](report-history.md) contracts. Images remain issue #61.
+[owned reports](report-history.md) contracts. [Optional images](question-images.md) are covered by issue #61.
 
 ## Authoring and conversion
 
@@ -97,8 +97,8 @@ unchanged. Restoration uses the same safe question projection.
 Quiz rows continue storing their existing JSONB questions arrays without a SQL
 migration. Every pre-extension question already had a discriminator, so readers
 do not invent missing types or rewrite stored data. Multiple-choice-only room
-snapshots and reports remain version 1. A snapshot containing True/False is
-version 2, and its completed report has `version:2` and `quiz.version:2`.
+snapshots and reports without image metadata remain version 1. A snapshot
+containing True/False or optional image metadata is version 2, and its completed report has `version:2` and `quiz.version:2`.
 History returns both versions unchanged; consumers must understand the new
 discriminant before enabling extended authoring.
 
@@ -126,4 +126,4 @@ version-2 readers for existing reports/quizzes.
 
 The separate UI owns type-switch controls, rendering two/four answer buttons,
 and handling both report versions. This document and Swagger are the API handoff;
-UI work and image support are separate follow-up.
+UI implementation remains separate follow-up.

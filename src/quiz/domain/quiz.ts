@@ -1,3 +1,5 @@
+import { isQuestionImageUrl } from './question-image';
+
 export interface QuizOption {
   id: string;
   text: string;
@@ -29,6 +31,8 @@ export interface QuizQuestion {
   id: string;
   type: 'multiple-choice' | 'true-false';
   prompt: string;
+  imageUrl?: string;
+  imageDescription?: string;
   options: QuizOption[];
   correctOptionIds: string[];
   durationSeconds: number | null;
@@ -51,6 +55,31 @@ export interface ReadinessError {
   field: string;
   code: string;
   message: string;
+}
+
+function questionImageErrors(
+  question: QuizQuestion,
+  field: string,
+): ReadinessError[] {
+  const errors: ReadinessError[] = [];
+  if (question.imageUrl !== undefined && !isQuestionImageUrl(question.imageUrl))
+    errors.push({
+      field: `${field}.imageUrl`,
+      code: 'IMAGE_URL',
+      message:
+        'Must be an HTTPS URL of at most 2048 characters without credentials',
+    });
+  if (
+    question.imageDescription !== undefined &&
+    (typeof question.imageDescription !== 'string' ||
+      [...question.imageDescription].length > 500)
+  )
+    errors.push({
+      field: `${field}.imageDescription`,
+      code: 'IMAGE_DESCRIPTION',
+      message: 'Must be a string of at most 500 characters',
+    });
+  return errors;
 }
 
 function questionMappingReadiness(
@@ -97,6 +126,7 @@ export function quizReadiness(quiz: Quiz): {
     });
   quiz.questions.forEach((question, index) => {
     const field = `questions[${index}]`;
+    errors.push(...questionImageErrors(question, field));
     errors.push(...questionMappingReadiness(question, field));
     if (!question.prompt.trim())
       errors.push({
@@ -151,6 +181,11 @@ export function assertQuizStructure(
     throw new InvalidQuizStructureError('questions: duplicate question IDs');
   }
   content.questions.forEach((question, index) => {
+    const imageError = questionImageErrors(question, `questions[${index}]`)[0];
+    if (imageError)
+      throw new InvalidQuizStructureError(
+        `${imageError.field}: ${imageError.message}`,
+      );
     const oldQuestion = previous?.questions.find(
       (old) => old.id.toLowerCase() === question.id.toLowerCase(),
     );

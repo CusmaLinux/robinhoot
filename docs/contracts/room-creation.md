@@ -66,7 +66,8 @@ request after resolving the failure.
 Creation reads the owner-scoped quiz once and rejects incomplete content using
 the existing derived readiness rules. It copies the title, ordered questions,
 ordered options, stable IDs, answer mappings, and durations into a deeply frozen
-version-1 (multiple-choice only) or version-2 (contains True/False) snapshot. Internal snapshots retain answer keys for future game use;
+version-1 (multiple-choice without media) or version-2 (contains True/False or
+[image metadata](question-images.md)) snapshot. Internal snapshots retain answer keys for future game use;
 they are never returned in creation metadata. Saving, reordering, or deleting the
 source does not change that snapshot. There is no room-to-quiz database foreign
 key or cascade.

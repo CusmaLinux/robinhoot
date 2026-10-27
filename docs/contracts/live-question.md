@@ -304,3 +304,9 @@ handoff; no UI repository URL is assumed.
 
 For ordered later questions, cumulative scores, retained old-question receipts,
 and early ending, see [question progression](game-progression.md).
+
+## Optional image metadata
+
+See [question images](question-images.md) for optional `imageUrl` /
+`imageDescription`, syntactic HTTPS validation, safe projections, immutable
+reference snapshots, compatibility and the API/UI handoff. The API never fetches images.
