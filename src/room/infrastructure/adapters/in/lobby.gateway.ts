@@ -1,3 +1,5 @@
+import { FINISH_GAME_PORT } from '../../../application/ports/in/finish-game.use-case';
+import type { FinishGamePort } from '../../../application/ports/in/finish-game.use-case';
 import { LIVE_QUESTION_PORT } from '../../../application/ports/in/live-question.use-case';
 import type { LiveQuestionPort } from '../../../application/ports/in/live-question.use-case';
 import { LOBBY_LIFECYCLE_PORT } from '../../../application/ports/in/lobby-lifecycle.use-case';
@@ -62,6 +64,7 @@ export class LobbyGateway {
     @Inject(LOBBY_LIFECYCLE_PORT)
     private readonly lifecycle: LobbyLifecyclePort,
     private readonly events: SocketLobbyEvents,
+    @Inject(FINISH_GAME_PORT) private readonly completion: FinishGamePort,
     @Inject(LIVE_QUESTION_PORT) private readonly live: LiveQuestionPort,
   ) {
     this.limiter = new AdmissionLimiter(limits);
@@ -118,6 +121,19 @@ export class LobbyGateway {
     return this.questionCommand(client, payload, 'start');
   }
 
+  @SubscribeMessage('host.finish')
+  async finish(
+    @ConnectedSocket() client: LobbySocket,
+    @MessageBody() payload: unknown,
+  ) {
+    return {
+      ok: true,
+      data: await this.completion.finish(
+        this.hostCommandInput(client, payload),
+      ),
+    };
+  }
+
   @SubscribeMessage('host.next')
   next(
     @ConnectedSocket() client: LobbySocket,
@@ -131,17 +147,21 @@ export class LobbyGateway {
     payload: unknown,
     kind: 'start' | 'next',
   ) {
+    return {
+      ok: true,
+      data: this.live[kind](this.hostCommandInput(client, payload)),
+    };
+  }
+
+  private hostCommandInput(client: LobbySocket, payload: unknown) {
     const input = startInput(payload);
     const bound = this.rooms.get(client);
     if (!bound || bound.role !== 'host' || bound.roomId !== input.roomId)
       throw new LobbyError('FORBIDDEN', 'Connection is not bound as this host');
     return {
-      ok: true,
-      data: this.live[kind]({
-        ...input,
-        ownerId: client.data.user.userId,
-        connectionId: client.id,
-      }),
+      ...input,
+      ownerId: client.data.user.userId,
+      connectionId: client.id,
     };
   }
 

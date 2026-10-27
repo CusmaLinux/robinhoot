@@ -12,7 +12,11 @@ import type {
   StartQuestionInput,
   SubmitAnswerInput,
 } from '../ports/in/live-question.use-case';
-import type { AnswerReceipt, QuestionState } from '../../domain/live-question';
+import type {
+  AnswerReceipt,
+  LiveRound,
+  QuestionState,
+} from '../../domain/live-question';
 import { LobbyError } from '../../domain/lobby';
 import type { Room } from '../../domain/room';
 
@@ -61,6 +65,16 @@ export class LiveQuestionService implements LiveQuestionPort {
   }
   private commandRoom(input: StartQuestionInput): Room {
     this.lifecycle.assertHost(input.roomId, input.ownerId, input.connectionId);
+    const room = this.rooms.findById(input.roomId)!;
+    if (room.finishCommand?.commandId === input.commandId)
+      throw new LobbyError('COMMAND_CONFLICT', 'Command ID belongs to finish');
+    if (room.finalizing)
+      throw new LobbyError(
+        'FINALIZATION_IN_PROGRESS',
+        'Finalization is in progress',
+      );
+    if (room.phase === 'finished')
+      throw new LobbyError('WRONG_PHASE', 'Game is finished');
     this.close(input.roomId);
     return this.rooms.findById(input.roomId)!;
   }
@@ -130,6 +144,13 @@ export class LiveQuestionService implements LiveQuestionPort {
   submit(input: SubmitAnswerInput): AnswerReceipt {
     this.lifecycle.assertOpen(input.roomId);
     const room = this.rooms.findById(input.roomId)!;
+    if (room.finalizing)
+      throw new LobbyError(
+        'FINALIZATION_IN_PROGRESS',
+        'Finalization is in progress',
+      );
+    if (room.phase === 'finished')
+      throw new LobbyError('WRONG_PHASE', 'Game is finished');
     const guest = room.guests.find(
       (g) => g.connectionId === input.connectionId,
     );
@@ -138,6 +159,45 @@ export class LiveQuestionService implements LiveQuestionPort {
         'SESSION_REPLACED',
         'Connection no longer owns this guest session',
       );
+    const round = this.answerRound(room, input, guest.playerId);
+    const accepted = this.retryAnswer(round, input, guest.playerId);
+    if (accepted) return accepted;
+    if (round !== room.round)
+      throw new LobbyError(
+        'WRONG_QUESTION',
+        'Answer must target the current question',
+      );
+    if (this.runtime.now() >= round.monotonicDeadline)
+      throw new LobbyError('LATE_ANSWER', 'Question deadline has passed');
+    if (room.phase !== 'question_open')
+      throw new LobbyError('WRONG_PHASE', 'Question is not open');
+    const receipt: AnswerReceipt = Object.freeze({
+      roomId: room.roomId,
+      questionId: input.questionId,
+      submissionId: input.submissionId,
+      optionId: input.optionId,
+      accepted: true,
+      acceptedAt: this.runtime.wallNow(),
+      revision: room.revision + 1,
+    });
+    this.rooms.mutate(room.roomId, (current) => ({
+      ...current,
+      revision: receipt.revision,
+      round: Object.freeze({
+        ...round,
+        answers: Object.freeze([
+          ...round.answers,
+          Object.freeze({ playerId: guest.playerId, receipt }),
+        ]),
+      }),
+    }));
+    return { ...receipt };
+  }
+  private answerRound(
+    room: Room,
+    input: SubmitAnswerInput,
+    playerId: string,
+  ): LiveRound {
     const round =
       [
         ...(room.previousRounds ?? []),
@@ -158,12 +218,19 @@ export class LiveQuestionService implements LiveQuestionPort {
         'INVALID_OPTION',
         'Option does not belong to this question',
       );
-    if (!round.eligiblePlayerIds.includes(guest.playerId))
+    if (!round.eligiblePlayerIds.includes(playerId))
       throw new LobbyError(
         'FORBIDDEN',
         'Player is not eligible for this question',
       );
-    const accepted = round.answers.find((a) => a.playerId === guest.playerId);
+    return round;
+  }
+  private retryAnswer(
+    round: LiveRound,
+    input: SubmitAnswerInput,
+    playerId: string,
+  ): AnswerReceipt | null {
+    const accepted = round.answers.find((a) => a.playerId === playerId);
     if (
       accepted?.receipt.submissionId === input.submissionId &&
       accepted.receipt.optionId === input.optionId
@@ -179,36 +246,7 @@ export class LiveQuestionService implements LiveQuestionPort {
         'ALREADY_ANSWERED',
         'Player already answered this question',
       );
-    if (round !== room.round)
-      throw new LobbyError(
-        'WRONG_QUESTION',
-        'Answer must target the current question',
-      );
-    if (this.runtime.now() >= round.monotonicDeadline)
-      throw new LobbyError('LATE_ANSWER', 'Question deadline has passed');
-    if (room.phase !== 'question_open')
-      throw new LobbyError('WRONG_PHASE', 'Question is not open');
-    const receipt: AnswerReceipt = Object.freeze({
-      roomId: room.roomId,
-      questionId: question.id,
-      submissionId: input.submissionId,
-      optionId: input.optionId,
-      accepted: true,
-      acceptedAt: this.runtime.wallNow(),
-      revision: room.revision + 1,
-    });
-    this.rooms.mutate(room.roomId, (current) => ({
-      ...current,
-      revision: receipt.revision,
-      round: Object.freeze({
-        ...round,
-        answers: Object.freeze([
-          ...round.answers,
-          Object.freeze({ playerId: guest.playerId, receipt }),
-        ]),
-      }),
-    }));
-    return { ...receipt };
+    return null;
   }
   close(roomId: string): void {
     const room = this.rooms.findById(roomId);
@@ -299,6 +337,8 @@ export class LiveQuestionService implements LiveQuestionPort {
       (answer) => answer.playerId === playerId,
     );
     return {
+      ...(room.finalizing ? { finalizing: true } : {}),
+      ...(room.report ? { report: room.report } : {}),
       roomId: room.roomId,
       questionId: question.id,
       revision: room.revision,
@@ -327,7 +367,7 @@ export class LiveQuestionService implements LiveQuestionPort {
           (played.scores.find((s) => s.playerId === playerId)?.points ?? 0),
         0,
       ),
-      ...(room.phase === 'question_reveal'
+      ...(['question_reveal', 'finished'].includes(room.phase)
         ? { correctOptionIds: [...question.correctOptionIds] }
         : {}),
     };

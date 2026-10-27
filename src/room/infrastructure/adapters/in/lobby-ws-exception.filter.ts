@@ -7,7 +7,13 @@ export class LobbyWsExceptionFilter implements WsExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const error =
       exception instanceof LobbyError
-        ? { code: exception.code, message: exception.message }
+        ? {
+            code: exception.code,
+            message: exception.message,
+            ...(exception.code === 'REPORT_SAVE_FAILED'
+              ? { retryable: true }
+              : {}),
+          }
         : exception instanceof HttpException && exception.getStatus() === 401
           ? { code: 'UNAUTHORIZED', message: 'Unauthorized' }
           : {

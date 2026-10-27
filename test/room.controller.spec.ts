@@ -482,7 +482,7 @@ describe('Owned room creation (HTTP + PostgreSQL)', () => {
       .send({ ...(requestExample.value as Record<string, unknown>), quizId })
       .expect(201);
     const created = operation.responses['201'];
-    if (!('content' in created))
+    if (!created || !('content' in created))
       throw new Error('Missing documented room creation response');
     const example = created.content!['application/json'].example as Record<
       string,

@@ -4,6 +4,8 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [Durable game finalization](contracts/game-finalization.md): owner-only finish, saved immutable report facts, shared ranks, retryable failures and completion after persistence.
+
 - [Question progression and early cancellation](contracts/game-progression.md): ordered owner-only next, retained retries and cumulative scores, terminal cancellation, and multi-question examples.
 
 - [Timed first question](contracts/live-question.md): owner-only start, fixed eligibility, safe labeled options, authoritative deadline, and automatic no-answer reveal.

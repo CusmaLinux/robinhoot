@@ -28,7 +28,8 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
     status: string,
   ): unknown {
     const response = operation.responses[status];
-    if (!('content' in response)) throw new Error('Missing response content');
+    if (!response || !('content' in response))
+      throw new Error('Missing response content');
     const media = response.content?.['application/json'];
     const schema = media?.schema;
     return (
@@ -862,7 +863,8 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
       if (!('value' in input)) throw new Error('Missing request example');
       const exampleInput = input.value as Record<string, unknown>;
       const response = operation.responses['200'];
-      if (!('content' in response)) throw new Error('Missing response content');
+      if (!response || !('content' in response))
+        throw new Error('Missing response content');
       const example = response.content!['application/json'].examples![name];
       if (!('value' in example)) throw new Error('Missing response example');
       const draft = await createDraft();

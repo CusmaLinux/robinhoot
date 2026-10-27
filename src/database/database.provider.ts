@@ -20,6 +20,7 @@ export const databaseProvider: Provider = {
         password: process.env.DB_PASSWORD,
         port: parseInt(process.env.DB_PORT || '5432', 10),
         max: 10,
+        connectionTimeoutMillis: 5000,
       }),
     });
 

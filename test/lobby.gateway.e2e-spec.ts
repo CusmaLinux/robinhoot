@@ -1,3 +1,6 @@
+import { REPORT_REPOSITORY_PORT } from '../src/room/application/ports/out/report.repository.port';
+import type { ReportRepositoryPort } from '../src/room/application/ports/out/report.repository.port';
+import type { FinishedGame } from '../src/room/application/ports/in/finish-game.use-case';
 import type { LobbyRuntimePort } from '../src/room/application/ports/out/lobby-runtime.port';
 
 import { INestApplication } from '@nestjs/common';
@@ -232,6 +235,7 @@ describe('Lobby Socket.IO transport', () => {
     room = await createRoom(token);
   });
   afterEach(async () => {
+    jest.restoreAllMocks();
     clients.splice(0).forEach((client) => client.disconnect());
     await rollbackTransaction(pool);
     if (app) await destroyTestApp(app, db);
@@ -270,6 +274,355 @@ describe('Lobby Socket.IO transport', () => {
       bob: await connect(),
     };
   }
+
+  async function finalReveal() {
+    const actors = await openForGuest();
+    await ack(actors.guest, 'answer.submit', actors.input);
+    runtime.advance(20_000);
+    const current = await ack<QuestionState>(actors.host, 'state.sync', {
+      roomId: room.roomId,
+    });
+    if (!current.ok) throw new Error(current.error.code);
+    return {
+      ...actors,
+      command: {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+        expectedRevision: current.data.revision,
+      },
+    };
+  }
+  it('persists one report before broadcasting completion to host and guest and safely retries a lost ack', async () => {
+    const { host, guest, command } = await finalReveal();
+    const repository = app.get<ReportRepositoryPort>(REPORT_REPOSITORY_PORT);
+    const save: ReportRepositoryPort['saveOnce'] = repository.saveOnce.bind(
+      repository,
+    ) as ReportRepositoryPort['saveOnce'];
+    let stored = false;
+    const spy = jest
+      .spyOn(repository, 'saveOnce')
+      .mockImplementation(async (report) => {
+        const result = await save(report);
+        stored = true;
+        return result;
+      });
+    const completions = [host, guest].map(
+      (client) =>
+        new Promise<FinishedGame>((resolve) =>
+          client.once('game.finished', (state: FinishedGame) => {
+            expect(stored).toBe(true);
+            resolve(state);
+          }),
+        ),
+    );
+    const first = await ack<FinishedGame>(host, 'host.finish', command);
+    if (!first.ok) throw new Error(first.error.code);
+    expect(first.data).toMatchObject({
+      phase: 'finished',
+      report: {
+        id: room.roomId,
+        standings: [{ rank: 1, total: 1000 }],
+        questions: [
+          { eligible: 1, correct: 1, incorrect: 0, missing: 0, accuracy: 100 },
+        ],
+      },
+    });
+    expect(await Promise.all(completions)).toEqual([first.data, first.data]);
+    expect(await ack(host, 'host.finish', command)).toEqual(first);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(
+      await db
+        .selectFrom('reports')
+        .select('room_id')
+        .where('room_id', '=', room.roomId)
+        .execute(),
+    ).toHaveLength(1);
+    expect(
+      await ack(guest, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: { phase: 'finished', report: first.data.report },
+    });
+    expect(
+      await ack(host, 'host.cancel', {
+        roomId: room.roomId,
+        commandId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'WRONG_PHASE' } });
+    spy.mockRestore();
+  });
+
+  it('returns a retryable save error at reveal and completes after storage recovers', async () => {
+    const { host, guest, command } = await finalReveal();
+    const repository = app.get<ReportRepositoryPort>(REPORT_REPOSITORY_PORT);
+    const spy = jest
+      .spyOn(repository, 'saveOnce')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    const events: FinishedGame[] = [];
+    guest.on('game.finished', (state: FinishedGame) => events.push(state));
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'REPORT_SAVE_FAILED', retryable: true },
+    });
+    expect(
+      await ack(guest, 'state.sync', { roomId: room.roomId }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        phase: 'question_reveal',
+        revision: command.expectedRevision,
+        score: 1000,
+      },
+    });
+    expect(events).toHaveLength(0);
+    expect(
+      await db
+        .selectFrom('reports')
+        .select('room_id')
+        .where('room_id', '=', room.roomId)
+        .execute(),
+    ).toHaveLength(0);
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: true,
+      data: { phase: 'finished' },
+    });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries the accepted finish after guest restoration changes the reveal revision', async () => {
+    const { host, guest, admitted, command } = await finalReveal();
+    const repository = app.get<ReportRepositoryPort>(REPORT_REPOSITORY_PORT);
+    jest
+      .spyOn(repository, 'saveOnce')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'REPORT_SAVE_FAILED' },
+    });
+    await disconnectClient(guest);
+    const replacement = await connect();
+    expect(
+      await ack(replacement, 'session.restore', {
+        roomId: room.roomId,
+        credential: admitted.credential,
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: true,
+      data: { phase: 'finished' },
+    });
+  });
+  it('retries a lost persistence response through the live command and returns the original database report', async () => {
+    const { host, command } = await finalReveal();
+    const repository = app.get<ReportRepositoryPort>(REPORT_REPOSITORY_PORT);
+    const save: ReportRepositoryPort['saveOnce'] = repository.saveOnce.bind(
+      repository,
+    ) as ReportRepositoryPort['saveOnce'];
+    jest
+      .spyOn(repository, 'saveOnce')
+      .mockImplementationOnce(async (report) => {
+        await save(report);
+        throw new Error('storage response lost');
+      });
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'REPORT_SAVE_FAILED', retryable: true },
+    });
+    const row = await db
+      .selectFrom('reports')
+      .select('document')
+      .where('room_id', '=', room.roomId)
+      .executeTakeFirstOrThrow();
+    runtime.advance(1000);
+    const retry = await ack<FinishedGame>(host, 'host.finish', command);
+    expect(retry).toMatchObject({ ok: true, data: { report: row.document } });
+  });
+  it('coalesces live finish commands and rejects cancellation and answers while persistence is pending', async () => {
+    const { host, guest, command, input } = await finalReveal();
+    const repository = app.get<ReportRepositoryPort>(REPORT_REPOSITORY_PORT);
+    const save: ReportRepositoryPort['saveOnce'] = repository.saveOnce.bind(
+      repository,
+    ) as ReportRepositoryPort['saveOnce'];
+    let entered!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const spy = jest
+      .spyOn(repository, 'saveOnce')
+      .mockImplementation(async (report) => {
+        entered();
+        await gate;
+        return save(report);
+      });
+    const first = ack<FinishedGame>(host, 'host.finish', command);
+    await started;
+    try {
+      const second = ack<FinishedGame>(host, 'host.finish', {
+        ...command,
+        commandId: randomUUID(),
+      });
+      expect(
+        await ack(guest, 'state.sync', { roomId: room.roomId }),
+      ).toMatchObject({
+        ok: true,
+        data: { phase: 'question_reveal', finalizing: true },
+      });
+      expect(
+        await ack(host, 'host.cancel', {
+          roomId: room.roomId,
+          commandId: randomUUID(),
+        }),
+      ).toMatchObject({
+        ok: false,
+        error: { code: 'FINALIZATION_IN_PROGRESS' },
+      });
+      expect(await ack(guest, 'answer.submit', input)).toMatchObject({
+        ok: false,
+        error: { code: 'FINALIZATION_IN_PROGRESS' },
+      });
+      release();
+      expect(await first).toEqual(await second);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      await first;
+    }
+  });
+  async function readQuestion(host: Socket): Promise<QuestionState> {
+    const result = await ack<QuestionState>(host, 'state.sync', {
+      roomId: room.roomId,
+    });
+    if (!result.ok) throw new Error(result.error.code);
+    return result.data;
+  }
+  async function openQuestion(
+    host: Socket,
+    event: 'host.start' | 'host.next',
+    expectedRevision: number,
+  ): Promise<QuestionState> {
+    const result = await ack<QuestionState>(host, event, {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision,
+    });
+    if (!result.ok) throw new Error(result.error.code);
+    return result.data;
+  }
+  async function answerCorrectly(
+    players: Socket[],
+    question: QuestionState,
+  ): Promise<void> {
+    for (const player of players) {
+      expect(
+        await ack(player, 'answer.submit', {
+          roomId: room.roomId,
+          questionId: question.questionId,
+          optionId: question.question.options[0].id,
+          submissionId: randomUUID(),
+        }),
+      ).toMatchObject({ ok: true });
+    }
+  }
+  async function finishAtCurrentReveal(
+    host: Socket,
+  ): Promise<Ack<FinishedGame>> {
+    const state = await readQuestion(host);
+    return ack<FinishedGame>(host, 'host.finish', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: state.revision,
+    });
+  }
+  it('finishes a two-question game with stable 1,1,3 standings and frozen missing counts', async () => {
+    const { host, alice, bob } = await twoQuestionActors();
+    const absent = await connect();
+    await join(alice, 'Alice');
+    await join(bob, 'Bob');
+    await join(absent, 'Carol');
+    const first = await openQuestion(host, 'host.start', 3);
+    await disconnectClient(absent);
+    await answerCorrectly([alice, bob], first);
+    runtime.advance(20_000);
+    expect(await finishAtCurrentReveal(host)).toMatchObject({
+      ok: false,
+      error: { code: 'WRONG_PHASE' },
+    });
+    const second = await openQuestion(
+      host,
+      'host.next',
+      (await readQuestion(host)).revision,
+    );
+    await answerCorrectly([alice, bob], second);
+    runtime.advance(30_000);
+    expect(await finishAtCurrentReveal(host)).toMatchObject({
+      ok: true,
+      data: {
+        report: {
+          standings: [
+            { nickname: 'Alice', total: 2000, rank: 1 },
+            { nickname: 'Bob', total: 2000, rank: 1 },
+            { nickname: 'Carol', total: 0, rank: 3 },
+          ],
+          questions: [
+            { eligible: 3, correct: 2, incorrect: 0, missing: 1 },
+            { eligible: 3, correct: 2, incorrect: 0, missing: 1 },
+          ],
+        },
+      },
+    });
+  });
+  it('revalidates authentication before finish and denies guests and foreign accounts', async () => {
+    const { host, guest, command } = await finalReveal();
+    expect(await ack(guest, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'UNAUTHORIZED' },
+    });
+    const foreign = await connect({ token: await loginAccount() });
+    expect(await ack(foreign, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'FORBIDDEN' },
+    });
+    await request(server)
+      .post('/auth/logout')
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'UNAUTHORIZED' },
+    });
+  });
+
+  it('denies a superseded finish connection and accepts the newly bound owner', async () => {
+    const { host, command } = await finalReveal();
+    const replacement = await connectHost();
+    expect(await ack(host, 'host.finish', command)).toMatchObject({
+      ok: false,
+      error: { code: 'SESSION_REPLACED' },
+    });
+    expect(await ack(replacement, 'host.finish', command)).toMatchObject({
+      ok: true,
+      data: { phase: 'finished' },
+    });
+    expect(
+      await ack(replacement, 'host.next', {
+        ...command,
+        commandId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'WRONG_PHASE' } });
+  });
+  it.each([undefined, -1, '5', 1.5])(
+    'rejects malformed finish revision %p',
+    async (expectedRevision) => {
+      const { host, command } = await finalReveal();
+      expect(
+        await ack(host, 'host.finish', { ...command, expectedRevision }),
+      ).toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+    },
+  );
   it('opens the second snapshot question for host and two guests through host.next', async () => {
     const { host, alice, bob } = await twoQuestionActors();
     await join(alice, 'Alice');

@@ -16,7 +16,7 @@ export interface LobbyState extends Partial<
 > {
   roomId: string;
   revision: number;
-  phase: 'lobby' | 'closed' | 'question_open' | 'question_reveal';
+  phase: 'lobby' | 'closed' | 'question_open' | 'question_reveal' | 'finished';
   roster: { playerId: string; nickname: string; connected: boolean }[];
 }
 
