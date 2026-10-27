@@ -263,7 +263,7 @@ sequenceDiagram
   Finish->>Lifecycle: Check authority and freeze finalization
   Finish->>Finish: Capture immutable candidate from last reveal
   Finish->>Reports: Transactional saveOnce by room UUID
-  Note over Lifecycle: Keep reveal; suppress timeout cancellation
+  Note over Lifecycle: Keep reveal and suppress timeout cancellation
   alt Storage commits
     Reports-->>Finish: Original stored owned report
     Finish->>Finish: Commit finished and increment revision once
@@ -272,7 +272,7 @@ sequenceDiagram
     Finish-->>Guests: game.finished
   else Storage fails or response is lost
     Reports-->>Finish: Persistence error
-    Finish->>Lifecycle: Clear finalizing; settle or rearm absence
+    Finish->>Lifecycle: Clear finalizing and settle or rearm absence
     Finish-->>Host: REPORT_SAVE_FAILED, retryable true
     Host->>Gateway: Retry original finish command
     Gateway->>Finish: Retry after fresh authorization
@@ -325,7 +325,7 @@ sequenceDiagram
   Read->>DB: Owner-filtered documents, newest first
   DB-->>Owner: Stored reports
   Timer->>Rooms: Ten minutes after successful finish: remove live aggregate and indexes
-  Note over Rooms: Credentials, receipts and timers expire; no cancellation
+  Note over Rooms: Credentials, receipts and timers expire without cancellation
   Owner->>HTTP: GET /reports/:id after cleanup, source deletion or restart
   HTTP->>Read: Read using verified owner ID and validated UUID
   Read->>DB: Match owner ID and room/report UUID
