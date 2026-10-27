@@ -28,17 +28,8 @@ export class LiveQuestionService implements LiveQuestionPort {
     @Inject(QUESTION_EVENTS_PORT) private readonly events: QuestionEventsPort,
   ) {}
   start(input: StartQuestionInput): QuestionState {
-    this.lifecycle.assertHost(input.roomId, input.ownerId, input.connectionId);
-    this.close(input.roomId);
-    const room = this.rooms.findById(input.roomId)!;
-    if (room.round?.commandId === input.commandId) {
-      if (room.round.expectedRevision !== input.expectedRevision)
-        throw new LobbyError(
-          'COMMAND_CONFLICT',
-          'Start command was accepted with different content',
-        );
-      return this.project(room);
-    }
+    const room = this.commandRoom(input);
+    if (this.acceptedCommand(room, input, 'start')) return this.project(room);
     if (room.phase !== 'lobby')
       throw new LobbyError(
         'WRONG_PHASE',
@@ -51,10 +42,63 @@ export class LiveQuestionService implements LiveQuestionPort {
       );
     if (room.revision !== input.expectedRevision)
       throw new LobbyError('STALE_REVISION', 'Room revision has changed');
-    const duration = room.quiz.questions[0].durationSeconds * 1000;
+    return this.open(room, input, 0);
+  }
+  next(input: StartQuestionInput): QuestionState {
+    const room = this.commandRoom(input);
+    if (this.acceptedCommand(room, input, 'next')) return this.project(room);
+    if (room.phase !== 'question_reveal')
+      throw new LobbyError('WRONG_PHASE', 'Next requires a revealed question');
+    const index = room.round!.questionIndex + 1;
+    if (index >= room.quiz.questions.length)
+      throw new LobbyError(
+        'NO_MORE_QUESTIONS',
+        'The final question is already revealed',
+      );
+    if (room.revision !== input.expectedRevision)
+      throw new LobbyError('STALE_REVISION', 'Room revision has changed');
+    return this.open(room, input, index);
+  }
+  private commandRoom(input: StartQuestionInput): Room {
+    this.lifecycle.assertHost(input.roomId, input.ownerId, input.connectionId);
+    this.close(input.roomId);
+    return this.rooms.findById(input.roomId)!;
+  }
+  private acceptedCommand(
+    room: Room,
+    input: StartQuestionInput,
+    kind: 'start' | 'next',
+  ): boolean {
+    const accepted = [
+      ...(room.previousRounds ?? []),
+      ...(room.round ? [room.round] : []),
+    ].find((round) => round.commandId === input.commandId);
+    if (!accepted) return false;
+    if (
+      accepted.expectedRevision !== input.expectedRevision ||
+      (accepted.questionIndex === 0 ? 'start' : 'next') !== kind
+    )
+      throw new LobbyError(
+        'COMMAND_CONFLICT',
+        kind === 'start'
+          ? 'Start command was accepted with different content'
+          : 'Next command was accepted with different content',
+      );
+    return true;
+  }
+  private open(
+    room: Room,
+    input: StartQuestionInput,
+    questionIndex: number,
+  ): QuestionState {
+    const duration = room.quiz.questions[questionIndex].durationSeconds * 1000;
     const openedAt = this.runtime.wallNow();
     const next = this.rooms.mutate(room.roomId, (current) => ({
       ...current,
+      previousRounds: Object.freeze([
+        ...(current.previousRounds ?? []),
+        ...(current.round ? [current.round] : []),
+      ]),
       phase: 'question_open',
       revision: current.revision + 1,
       round: Object.freeze({
@@ -62,8 +106,10 @@ export class LiveQuestionService implements LiveQuestionPort {
         answers: Object.freeze([]),
         commandId: input.commandId,
         expectedRevision: input.expectedRevision,
-        questionIndex: 0,
-        eligiblePlayerIds: Object.freeze(current.guests.map((g) => g.playerId)),
+        questionIndex,
+        eligiblePlayerIds:
+          current.round?.eligiblePlayerIds ??
+          Object.freeze(current.guests.map((g) => g.playerId)),
         openedAt,
         deadline: openedAt + duration,
         monotonicDeadline: this.runtime.now() + duration,
@@ -92,7 +138,14 @@ export class LiveQuestionService implements LiveQuestionPort {
         'SESSION_REPLACED',
         'Connection no longer owns this guest session',
       );
-    const round = room.round;
+    const round =
+      [
+        ...(room.previousRounds ?? []),
+        ...(room.round ? [room.round] : []),
+      ].find(
+        (played) =>
+          room.quiz.questions[played.questionIndex].id === input.questionId,
+      ) ?? room.round;
     if (!round) throw new LobbyError('WRONG_PHASE', 'No question is open');
     const question = room.quiz.questions[round.questionIndex];
     if (question.id !== input.questionId)
@@ -125,6 +178,11 @@ export class LiveQuestionService implements LiveQuestionPort {
       throw new LobbyError(
         'ALREADY_ANSWERED',
         'Player already answered this question',
+      );
+    if (round !== room.round)
+      throw new LobbyError(
+        'WRONG_QUESTION',
+        'Answer must target the current question',
       );
     if (this.runtime.now() >= round.monotonicDeadline)
       throw new LobbyError('LATE_ANSWER', 'Question deadline has passed');
@@ -263,7 +321,12 @@ export class LiveQuestionService implements LiveQuestionPort {
       ...(playerId
         ? { acceptedAnswer: accepted ? { ...accepted.receipt } : null }
         : {}),
-      score: round.scores.find((s) => s.playerId === playerId)?.points ?? 0,
+      score: [...(room.previousRounds ?? []), round].reduce(
+        (total, played) =>
+          total +
+          (played.scores.find((s) => s.playerId === playerId)?.points ?? 0),
+        0,
+      ),
       ...(room.phase === 'question_reveal'
         ? { correctOptionIds: [...question.correctOptionIds] }
         : {}),

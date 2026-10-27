@@ -1,4 +1,4 @@
-# Timed first-question architecture
+# Live-question and progression architecture
 
 The [wire contract](../contracts/live-question.md) defines start, safe opening,
 server timing, private answer receipts, retries, and scored reveal. This extends the
@@ -11,7 +11,7 @@ are synchronous through `ROOM_STORE_PORT`; no awaited work can interleave a
 phase/revision check and its commit. The existing in-memory store freezes each
 replacement room; round eligibility and the accepted start receipt are frozen
 inside it. Accepted answers and reveal scores are also frozen inside that round.
-Only the first immutable quiz snapshot question is selected.
+Start selects the first immutable snapshot question; next selects its immediate successor at reveal.
 
 `answer.submit` accepts only room/question/submission/option UUIDs. The gateway
 requires a bound guest, while the application derives player identity from the
@@ -110,8 +110,7 @@ start/reveal during a delayed subscription is therefore reflected in the
 acknowledgement. Roster events carry only display state. Complete question
 snapshots use explicit public fields; correct options are projected only at
 reveal. Answer acceptance never includes correctness. The [active recovery acceptance record](../contracts/active-game-recovery.md)
-verifies this boundary through real clients. Progression and durable reporting
-remain separate changes.
+verifies this boundary through real clients. See [progression and cancellation](../contracts/game-progression.md) for the multi-question contract. Durable reporting remains a separate issue.
 
 ## Active recovery and host absence
 
@@ -151,9 +150,65 @@ sequenceDiagram
 
 Host absence changes connection authority rather than question phase. Open
 still transitions to reveal at the original deadline, and reveal remains until
-owner-controlled progression in the next change. Successful owner return before
+owner-controlled progression. Successful owner return before
 the cutoff cancels absence without reopening or rescoring. Failed authentication
 or foreign ownership cannot cancel or extend it. At the cutoff, cancellation
 wins even if its callback is delayed; receipts and guest credentials lose their
 authority with the room. A later disconnect begins a new absence window only for
 the then-current bound host.
+
+## Ordered progression and early ending
+
+`host.next` uses the existing live-question port, current host authority, and
+UUID/revision validation. Accepted command lookup precedes phase/revision checks
+and distinguishes start from next. Prior revealed rounds remain frozen inside
+the room, bounded by the snapshot's twenty-question limit. Each holds its
+opening command fingerprint, eligible roster, accepted answers and fixed
+scores. The current round begins with empty answers/scores and fresh wall and
+monotonic deadlines. Guest totals sum revealed rounds; public opening scores
+remain zero. Historical accepted-answer retries preserve their original receipt.
+No new persistence, DI provider, or external service is needed.
+
+```mermaid
+sequenceDiagram
+  participant Host
+  participant Gateway
+  participant Live
+  participant Lifecycle
+  participant Store
+  participant Timer
+  participant Guests
+  Host->>Gateway: host.next(roomId, commandId, expectedRevision)
+  Gateway->>Gateway: Validate payload and fresh JWT/current binding
+  Gateway->>Live: Next using verified owner/connection
+  Live->>Live: Check authority, accepted receipt, reveal, remaining question, revision
+  Live->>Store: Retain revealed round and open next snapshot with fresh deadline
+  Live->>Timer: Schedule next monotonic cutoff
+  Live-->>Host: Public acknowledgement and question.opened
+  Live-->>Guests: Public question.opened without correctness
+  Host->>Gateway: Retry same next command after acknowledgement loss
+  Gateway->>Live: Check original command fingerprint
+  Live-->>Host: Current public state without advancing or resetting
+  Host->>Gateway: host.cancel(roomId, commandId)
+  Gateway->>Lifecycle: Cancel using verified owner/connection
+  Lifecycle->>Store: Remove room and release indexes/timers
+  Lifecycle-->>Host: lobby.closed with OWNER_CANCELLED
+  Lifecycle-->>Guests: lobby.closed with OWNER_CANCELLED
+```
+
+```mermaid
+stateDiagram-v2
+  QuestionOpen --> QuestionReveal: Deadline scores current question once
+  QuestionReveal --> QuestionOpen: Owner next with remaining snapshot question
+  QuestionReveal --> QuestionReveal: Accepted retry or rejected next after final question
+  QuestionOpen --> QuestionOpen: Accepted retry preserves current deadline
+  QuestionOpen --> Closed: Owner cancellation or host timeout
+  QuestionReveal --> Closed: Owner cancellation or host timeout
+  Closed --> [*]: Live rounds removed, bounded closure tombstone retained
+```
+
+Cancellation reuses `LobbyLifecyclePort` and `lobby.closed`; both later open and
+reveal close with a reason and invalidate all command/answer authority. There is
+no completed report or finished phase in #57. Finalization and report persistence
+remain #58; owned history remains #59. The predecessor main `live-gameplay` spec
+was synced and its fully verified change archived before this extension.

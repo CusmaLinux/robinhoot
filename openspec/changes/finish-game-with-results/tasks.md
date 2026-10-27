@@ -4,10 +4,10 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 
 ## 1. Advance through the snapshot
 
-- [ ] 1.1 Verify play-live-question is implemented and archived; reconcile actual phase/revision behavior before extending the transition contract.
-- [ ] 1.2 Test next from reveal then implement the owner-only next-question API command; verify fixed snapshot order and fresh per-question deadlines.
-- [ ] 1.3 Test next retries, non-owner next, next while open, and next after the final question; verify no skipping/resetting and document progression errors.
-- [ ] 1.4 Test and implement explicit early ending with cancellation feedback; verify no completed report is created and all further answers/progression are rejected.
+- [x] 1.1 Verify play-live-question is implemented and archived; reconcile actual phase/revision behavior before extending the transition contract.
+- [x] 1.2 Test next from reveal then implement the owner-only next-question API command; verify fixed snapshot order and fresh per-question deadlines.
+- [x] 1.3 Test next retries, non-owner next, next while open, and next after the final question; verify no skipping/resetting and document progression errors.
+- [x] 1.4 Test and implement explicit early ending with cancellation feedback; verify no completed report is created and all further answers/progression are rejected.
 
 ## 2. Persist and announce completion
 
@@ -32,3 +32,46 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 - Reconcile the next change against the resulting main specs before applying it.
 
 - Link related UI issues in the separate repository once their real URLs are known; screen implementation, browser accessibility, and joint professor rehearsal are external product follow-up.
+
+Issue #57 evidence (2026-10-26): verified the merged predecessor (#56 at
+`08b8b9c`, diagram correction `8c3c4d3`) with 160 unit / 128 integration /
+104 e2e tests, build, type, formatting, read-only lint and strict OpenSpec
+validation. Synced six `live-gameplay` requirements to main and archived the
+full predecessor as `2026-10-26-play-live-question` before implementing next;
+re-read the actual resulting main specification. The archive's relative
+contract/source links were adjusted for its deeper location.
+
+One-test/minimal-implementation cycles cover fresh next duration, historical
+start/next retries, cumulative scores, old accepted-answer receipts, and the
+new real `host.next` event. Additional fake-time cases verify phase/revision/
+command conflicts, foreign/replaced hosts, final-question guard, disconnected
+eligibility, new old-question rejection, and cancellation during later open
+and reveal with timer cleanup and stale callbacks. Real HTTP plus independent
+host/two-guest sockets verify safe opening parity, retry, competing commands,
+JWT revocation, invalid payloads, score/receipt restoration across two questions,
+and terminal cancellation feedback with later answer/progression/restore denial.
+Cancellation reuses the existing lifecycle and creates no completed report;
+there is no report repository or completion writer in this slice.
+
+See [wire contract and two-question examples](../../../docs/contracts/game-progression.md),
+[component/sequence/state documentation](../../../docs/architecture/live-question.md),
+[fake-time verification](../../../src/room/application/services/live-question.service.spec.ts),
+and [real transport acceptance](../../../test/lobby.gateway.e2e-spec.ts).
+
+Tasks 1.1–1.4 are complete (4/12 overall). Keep the remaining eight tasks and
+archival pending for #58–#59. API/UI handoff is documented; UI implementation,
+production database changes, merging, and deployment are outside this slice.
+
+Final verification: 176 unit tests / 20 suites, 128 integration tests / four
+suites, and 118 e2e tests / two suites pass. The final shared command path is
+also covered by 44 targeted transport cases. Build, TypeScript, formatting,
+strict validation of all twelve active/main OpenSpec items, local documentation
+links, and whitespace checks pass. Read-only ESLint has zero errors and only
+the two existing auth-test warnings. Database-backed checks use exclusively
+`robinhoot_issue54_test` on loopback port 55454 with dedicated test credentials
+and an explicit test JWT secret. Measured unit coverage for the live-question
+service is 95% statements / 90% branches / 100% functions. Combined measured
+unit/transport coverage gives the advisory Fallow audit a pass with zero
+dead-code, complexity, or duplication findings. Architecture boundaries remain
+unconfigured in Fallow; domain dependencies, synchronous room mutation, Symbol
+DI, and transport/application direction were reviewed directly in the diff.

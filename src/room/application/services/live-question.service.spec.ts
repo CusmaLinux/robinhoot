@@ -58,6 +58,14 @@ describe('Timed first question', () => {
               correctOptionIds: ['b'],
               durationSeconds: 20,
             },
+            ...[30, 10].map((durationSeconds, index) => ({
+              id: `question-${index + 2}`,
+              type: 'multiple-choice' as const,
+              prompt: `Question ${index + 2}?`,
+              options: ['a', 'b', 'c', 'd'].map((id) => ({ id, text: id })),
+              correctOptionIds: ['b'],
+              durationSeconds,
+            })),
           ],
         }),
     );
@@ -98,6 +106,200 @@ describe('Timed first question', () => {
     lifecycle.onModuleDestroy();
     jest.useRealTimers();
   });
+  it('opens exactly the next snapshot question with a fresh full duration after waiting at reveal', () => {
+    start();
+    monotonic += 20_000;
+    live.close(room.roomId);
+    monotonic += 5_000;
+    jest.setSystemTime(Date.now() + 25_000);
+    const revealed = live.snapshot(room.roomId)!;
+    const next = live.next({
+      roomId: room.roomId,
+      ownerId: 'owner',
+      connectionId: 'host',
+      commandId: 'next-2',
+      expectedRevision: revealed.revision,
+    });
+    expect(next).toMatchObject({
+      questionId: 'question-2',
+      phase: 'question_open',
+      revision: revealed.revision + 1,
+      openedAt: Date.now(),
+      deadline: Date.now() + 30_000,
+    });
+    expect(rooms.findById(room.roomId)?.round?.monotonicDeadline).toBe(
+      monotonic + 30_000,
+    );
+    expect(events.opened).toHaveBeenCalledTimes(2);
+  });
+  const next = (overrides = {}) =>
+    live.next({
+      roomId: room.roomId,
+      ownerId: 'owner',
+      connectionId: 'host',
+      commandId: 'next-2',
+      expectedRevision: rooms.findById(room.roomId)?.revision ?? 0,
+      ...overrides,
+    });
+  const reveal = (milliseconds = 20_000) => {
+    monotonic += milliseconds;
+    live.close(room.roomId);
+  };
+  it('recognizes old next and start retries after later questions without skipping or resetting', () => {
+    start();
+    reveal();
+    const revision = rooms.findById(room.roomId)!.revision;
+    const opened = next({ expectedRevision: revision });
+    expect(next({ expectedRevision: revision }).deadline).toBe(opened.deadline);
+    reveal(30_000);
+    next({ commandId: 'next-3' });
+    const current = rooms.findById(room.roomId);
+    expect(next({ expectedRevision: revision }).questionId).toBe('question-3');
+    expect(start().questionId).toBe('question-3');
+    expect(rooms.findById(room.roomId)).toBe(current);
+    expect(events.opened).toHaveBeenCalledTimes(3);
+  });
+  it('preserves cumulative scores while clearing only the new question acceptance state', () => {
+    start();
+    submit();
+    reveal();
+    next();
+    expect(live.snapshot(room.roomId, 'guest')).toMatchObject({
+      score: 1000,
+      acceptedAnswer: null,
+    });
+    submit({ questionId: 'question-2', submissionId: 'second-answer' });
+    reveal(30_000);
+    expect(live.snapshot(room.roomId, 'guest')?.score).toBe(2000);
+    callbacks.forEach((callback) => callback());
+    expect(live.snapshot(room.roomId, 'guest')?.score).toBe(2000);
+    expect(rooms.findById(room.roomId)?.previousRounds).toHaveLength(1);
+  });
+  it('returns an accepted old-question receipt after progression without altering the new round', () => {
+    start();
+    const receipt = submit();
+    reveal();
+    next();
+    const current = rooms.findById(room.roomId);
+    expect(submit()).toEqual(receipt);
+    expect(rooms.findById(room.roomId)).toBe(current);
+    expect(() => submit({ optionId: 'a' })).toThrow(
+      expect.objectContaining({ code: 'SUBMISSION_CONFLICT' }) as Error,
+    );
+    expect(() => submit({ submissionId: 'new-old-answer' })).toThrow(
+      expect.objectContaining({ code: 'ALREADY_ANSWERED' }) as Error,
+    );
+  });
+  it.each([
+    ['foreign owner', { ownerId: 'foreign' }, 'FORBIDDEN'],
+    ['replaced host', { connectionId: 'obsolete' }, 'SESSION_REPLACED'],
+    ['stale revision', { expectedRevision: 0 }, 'STALE_REVISION'],
+    [
+      'start ID reused as next',
+      { commandId: 'start', expectedRevision: 1 },
+      'COMMAND_CONFLICT',
+    ],
+  ])('rejects next from %s without changing reveal', (_name, input, code) => {
+    start();
+    reveal();
+    const current = rooms.findById(room.roomId);
+    expect(() => next(input)).toThrow(
+      expect.objectContaining({ code }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(current);
+  });
+  it('rejects a new next command while open without resetting the question', () => {
+    start();
+    const current = rooms.findById(room.roomId);
+    expect(() => next()).toThrow(
+      expect.objectContaining({ code: 'WRONG_PHASE' }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBe(current);
+  });
+  it('rejects next from the lobby', () => {
+    expect(() => next()).toThrow(
+      expect.objectContaining({ code: 'WRONG_PHASE' }) as Error,
+    );
+  });
+  it('rejects changed content for an old next receipt and cross-command ID reuse', () => {
+    start();
+    reveal();
+    const revision = rooms.findById(room.roomId)!.revision;
+    next();
+    reveal(30_000);
+    expect(() => next({ expectedRevision: revision + 1 })).toThrow(
+      expect.objectContaining({ code: 'COMMAND_CONFLICT' }) as Error,
+    );
+    expect(() =>
+      start({ commandId: 'next-2', expectedRevision: revision }),
+    ).toThrow(expect.objectContaining({ code: 'COMMAND_CONFLICT' }) as Error);
+  });
+  it('rejects a new next after the final reveal but acknowledges an accepted retry', () => {
+    start();
+    reveal();
+    next();
+    reveal(30_000);
+    const revision = rooms.findById(room.roomId)!.revision;
+    next({ commandId: 'next-3' });
+    reveal(10_000);
+    const current = rooms.findById(room.roomId);
+    expect(() => next({ commandId: 'past-final' })).toThrow(
+      expect.objectContaining({ code: 'NO_MORE_QUESTIONS' }) as Error,
+    );
+    expect(
+      next({ commandId: 'next-3', expectedRevision: revision }).phase,
+    ).toBe('question_reveal');
+    expect(rooms.findById(room.roomId)).toBe(current);
+  });
+  it('keeps disconnected starting players eligible for later questions and awards missing zero', () => {
+    start();
+    lobby.disconnect(room.roomId, 'guest');
+    reveal();
+    next();
+    reveal(30_000);
+    expect(rooms.findById(room.roomId)?.round?.eligiblePlayerIds).toHaveLength(
+      1,
+    );
+    expect(rooms.findById(room.roomId)?.round?.scores[0].points).toBe(0);
+  });
+  it('rejects a new old-question answer after progression', () => {
+    start();
+    reveal();
+    next();
+    expect(() => submit()).toThrow(
+      expect.objectContaining({ code: 'WRONG_QUESTION' }) as Error,
+    );
+  });
+  it.each(['question_open', 'question_reveal'])(
+    'cancels a later %s and invalidates every retained command and answer',
+    (phase) => {
+      start();
+      submit();
+      reveal();
+      next();
+      if (phase === 'question_reveal') reveal(30_000);
+      const closure = lifecycle.cancel(room.roomId, 'owner', 'host');
+      expect(closure).toMatchObject({
+        phase: 'closed',
+        reason: 'OWNER_CANCELLED',
+      });
+      expect(rooms.findById(room.roomId)).toBeNull();
+      expect(() => next()).toThrow(
+        expect.objectContaining({ code: 'ROOM_CLOSED' }) as Error,
+      );
+      expect(() => start()).toThrow(
+        expect.objectContaining({ code: 'ROOM_CLOSED' }) as Error,
+      );
+      expect(() => submit()).toThrow(
+        expect.objectContaining({ code: 'ROOM_CLOSED' }) as Error,
+      );
+      const published = events.revealed.mock.calls.length;
+      callbacks.forEach((callback) => callback());
+      expect(events.revealed).toHaveBeenCalledTimes(published);
+      expect(jest.getTimerCount()).toBe(0);
+      expect(lifecycle.cancel(room.roomId, 'owner', 'host')).toEqual(closure);
+    },
+  );
   it('accepts one answer for the current bound guest without revealing correctness', () => {
     start();
     const receipt = live.submit({

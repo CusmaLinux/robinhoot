@@ -19,6 +19,7 @@ export interface SubmitAnswerInput {
 }
 export interface LiveQuestionPort {
   submit(input: SubmitAnswerInput): AnswerReceipt;
+  next(input: StartQuestionInput): QuestionState;
   start(input: StartQuestionInput): QuestionState;
   snapshot(roomId: string, connectionId?: string): QuestionState | null;
 }

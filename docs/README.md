@@ -4,6 +4,8 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [Question progression and early cancellation](contracts/game-progression.md): ordered owner-only next, retained retries and cumulative scores, terminal cancellation, and multi-question examples.
+
 - [Timed first question](contracts/live-question.md): owner-only start, fixed eligibility, safe labeled options, authoritative deadline, and automatic no-answer reveal.
 - [Live-question architecture](architecture/live-question.md): ports, timing, start/retry sequence, and phase transitions.
 

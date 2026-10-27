@@ -6,7 +6,7 @@ Apply after add-game-lobby is archived. Reuse its room store, identity bindings,
 
 ## Goals / Non-Goals
 
-Repository boundary: this is an API-only change. The existing UI is an external consumer maintained in another repository. See [API/UI boundary](../../../docs/api-ui-boundary.md) for contract handoff and completion responsibilities.
+Repository boundary: this is an API-only change. The existing UI is an external consumer maintained in another repository. See [API/UI boundary](../../../../docs/api-ui-boundary.md) for contract handoff and completion responsibilities.
 
 Goals: deterministic timed state, one accepted answer, safe reveal, and reconnect across a round.
 Non-goals: speed bonuses, early closure when everyone answers, pause, or distributed coordination.
