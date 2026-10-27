@@ -1,3 +1,4 @@
+import type { GameReport } from '../room/domain/game-report';
 import { ColumnType, Generated } from 'kysely';
 import type { QuizQuestion } from '../quiz/domain/quiz';
 
@@ -13,6 +14,7 @@ export interface UsersTable {
 type UserRole = 'user' | 'admin';
 
 export interface Database {
+  reports: ReportsTable;
   users: UsersTable;
   quizzes: QuizzesTable;
 }
@@ -24,4 +26,10 @@ export interface QuizzesTable {
   questions: ColumnType<QuizQuestion[], string, string>;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
+}
+
+export interface ReportsTable {
+  room_id: string;
+  owner_id: string;
+  document: ColumnType<GameReport, string, never>;
 }

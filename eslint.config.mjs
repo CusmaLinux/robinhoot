@@ -19,12 +19,7 @@ export default tseslint.config(
       },
       sourceType: 'module',
       parserOptions: {
-        projectService: {
-          allowDefaultProject: [
-            'test/*.ts',
-            'test/helpers/*.ts',
-          ],
-        },
+        projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -35,7 +30,7 @@ export default tseslint.config(
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
       '@typescript-eslint/unbound-method': 'off',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
 );

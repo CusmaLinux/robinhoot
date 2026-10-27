@@ -1,3 +1,4 @@
+import type { GameReport } from './game-report';
 export interface AnswerReceipt {
   readonly roomId: string;
   readonly questionId: string;
@@ -31,7 +32,9 @@ export interface QuestionState {
   roomId: string;
   questionId: string;
   revision: number;
-  phase: 'question_open' | 'question_reveal';
+  phase: 'question_open' | 'question_reveal' | 'finished';
+  finalizing?: boolean;
+  report?: GameReport;
   question: {
     id: string;
     type: 'multiple-choice';

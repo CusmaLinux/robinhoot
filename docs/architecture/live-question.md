@@ -110,7 +110,7 @@ start/reveal during a delayed subscription is therefore reflected in the
 acknowledgement. Roster events carry only display state. Complete question
 snapshots use explicit public fields; correct options are projected only at
 reveal. Answer acceptance never includes correctness. The [active recovery acceptance record](../contracts/active-game-recovery.md)
-verifies this boundary through real clients. See [progression and cancellation](../contracts/game-progression.md) for the multi-question contract. Durable reporting remains a separate issue.
+verifies this boundary through real clients. See [progression and cancellation](../contracts/game-progression.md) for the multi-question contract. See the [durable finalization contract](../contracts/game-finalization.md) for completion.
 
 ## Active recovery and host absence
 
@@ -208,7 +208,87 @@ stateDiagram-v2
 ```
 
 Cancellation reuses `LobbyLifecyclePort` and `lobby.closed`; both later open and
-reveal close with a reason and invalidate all command/answer authority. There is
-no completed report or finished phase in #57. Finalization and report persistence
-remain #58; owned history remains #59. The predecessor main `live-gameplay` spec
+reveal close with a reason and invalidate all command/answer authority. Cancelled games produce no completion. Issue #58 adds durable finalization
+below; owned history and finished-room cleanup remain #59. The predecessor main `live-gameplay` spec
 was synced and its fully verified change archived before this extension.
+
+## Durable finalization
+
+`FINISH_GAME_PORT` routes the JWT-validated bound owner to `FinishGameService`.
+The service validates the final reveal and revision, captures one deeply frozen
+report candidate, and marks finalization synchronously before awaiting
+`REPORT_REPOSITORY_PORT`. Concurrent valid commands share a pending promise.
+The Kysely adapter uses a transaction, unique room primary key, conflict-ignore
+insert, and owner-filtered read of the original document. No live credential or
+answer receipt enters the durable payload. The domain report builder imports
+only domain types and produces deterministic totals, shared ranks and counts.
+`RoomModule` binds both ports and `GAME_EVENTS_PORT` to concrete adapters.
+
+During persistence, `LobbyLifecycleService` suppresses host-absence settlement
+and cancellation while synchronization still returns reveal plus `finalizing`.
+Failure retains the candidate, clears the flag and reevaluates/rearms absence.
+Success installs the stored report, advances revision once, disarms absence and
+only then calls `GameEventsPort.finished`. The Socket.IO adapter broadcasts
+`game.finished` to the subscribed room channel. Synchronization/restoration use
+the same finished report; a lost event can be recovered without another write.
+Terminal answers/progression/cancellation are rejected. No callback can close
+an in-flight or finished room. Retention/history work is tracked by #59.
+
+```mermaid
+flowchart LR
+  Host --> Gateway[LobbyGateway]
+  Gateway --> Finish[FinishGamePort / service]
+  Finish --> Builder[Domain report facts]
+  Finish --> Store[RoomStorePort]
+  Finish --> Lifecycle[LobbyLifecyclePort]
+  Finish --> Repository[ReportRepositoryPort]
+  Repository --> Adapter[ReportKyselyAdapter]
+  Adapter --> PostgreSQL[(Unique room report)]
+  Finish --> Events[GameEventsPort]
+  Events --> Socket[SocketLobbyEvents]
+  Socket --> Participants[Subscribed host and guests]
+```
+
+```mermaid
+sequenceDiagram
+  participant Host
+  participant Gateway
+  participant Finish as FinishGameService
+  participant Lifecycle
+  participant Reports as PostgreSQL report adapter
+  participant Guests
+  Host->>Gateway: host.finish(roomId, commandId, expectedRevision)
+  Gateway->>Gateway: Revalidate JWT, payload and host binding
+  Gateway->>Finish: Finalize as verified owner and connection
+  Finish->>Lifecycle: Check authority and freeze finalization
+  Finish->>Finish: Capture immutable candidate from last reveal
+  Finish->>Reports: Transactional saveOnce by room UUID
+  Note over Lifecycle: Keep reveal; suppress timeout cancellation
+  alt Storage commits
+    Reports-->>Finish: Original stored owned report
+    Finish->>Finish: Commit finished and increment revision once
+    Finish->>Lifecycle: Disarm cancellation timers
+    Finish-->>Host: game.finished and successful acknowledgement
+    Finish-->>Guests: game.finished
+  else Storage fails or response is lost
+    Reports-->>Finish: Persistence error
+    Finish->>Lifecycle: Clear finalizing; settle or rearm absence
+    Finish-->>Host: REPORT_SAVE_FAILED, retryable true
+    Host->>Gateway: Retry original finish command
+    Gateway->>Finish: Retry after fresh authorization
+    Finish->>Reports: saveOnce with same frozen candidate
+    Reports-->>Finish: Same original report if already stored
+  end
+```
+
+```mermaid
+stateDiagram-v2
+  QuestionReveal --> Finalizing: Owner finish at last reveal
+  state "Reveal with finalizing true" as Finalizing
+  Finalizing --> Finalizing: Concurrent finish shares write
+  Finalizing --> Finished: Report transaction committed
+  Finalizing --> QuestionReveal: Save failed, no expired host absence
+  Finalizing --> Closed: Save failed with expired host absence
+  QuestionReveal --> Closed: Owner cancels before finalization
+  Finished --> Finished: Finish retry or current-session sync
+```

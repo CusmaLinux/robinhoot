@@ -72,8 +72,8 @@ settle a due reveal, just as state synchronization does.
 | `ROOM_CLOSED`       | Cancellation invalidated the live game                |
 
 Failures use `{ok:false,error:{code,message}}`. At final reveal the game awaits
-later owner action; next cannot complete it. Durable completion/reports are
-tracked by #58–#59 and are not implemented by this slice.
+later owner action; next cannot complete it. Durable completion is now implemented by #58; see the
+[finalization contract](game-finalization.md). Owned history remains #59.
 
 ## End early
 

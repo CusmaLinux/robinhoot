@@ -1,3 +1,8 @@
+import { FINISH_GAME_PORT } from '../application/ports/in/finish-game.use-case';
+import { GAME_EVENTS_PORT } from '../application/ports/out/game-events.port';
+import { REPORT_REPOSITORY_PORT } from '../application/ports/out/report.repository.port';
+import { FinishGameService } from '../application/services/finish-game.service';
+import { ReportKyselyAdapter } from './adapters/out/report.kysely.adapter';
 import { LIVE_QUESTION_PORT } from '../application/ports/in/live-question.use-case';
 import { QUESTION_RUNTIME_PORT } from '../application/ports/out/question-runtime.port';
 import { QUESTION_EVENTS_PORT } from '../application/ports/out/question-events.port';
@@ -34,6 +39,9 @@ import { OwnedQuizSnapshotReader } from './adapters/out/owned-quiz-snapshot.read
   controllers: [RoomController],
   providers: [
     LobbyGateway,
+    { provide: FINISH_GAME_PORT, useClass: FinishGameService },
+    { provide: GAME_EVENTS_PORT, useExisting: SocketLobbyEvents },
+    { provide: REPORT_REPOSITORY_PORT, useClass: ReportKyselyAdapter },
     { provide: LIVE_QUESTION_PORT, useClass: LiveQuestionService },
     { provide: QUESTION_RUNTIME_PORT, useClass: SystemQuestionRuntime },
     { provide: QUESTION_EVENTS_PORT, useExisting: SocketLobbyEvents },

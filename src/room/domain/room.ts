@@ -1,3 +1,4 @@
+import type { GameReport } from './game-report';
 import type { LiveRound } from './live-question';
 import type { Guest } from './lobby';
 export interface QuizSnapshot {
@@ -17,12 +18,20 @@ export interface QuizSnapshot {
 export interface RoomMetadata {
   readonly roomId: string;
   readonly pin: string;
-  readonly phase: 'lobby' | 'closed' | 'question_open' | 'question_reveal';
+  readonly phase:
+    'lobby' | 'closed' | 'question_open' | 'question_reveal' | 'finished';
   readonly revision: number;
   readonly createdAt: string;
 }
 
 export interface Room extends RoomMetadata {
+  readonly reportCandidate?: GameReport;
+  readonly finishCommand?: {
+    readonly commandId: string;
+    readonly expectedRevision: number;
+  };
+  readonly finalizing?: boolean;
+  readonly report?: GameReport;
   readonly round?: LiveRound;
   readonly previousRounds?: readonly LiveRound[];
   readonly guests: readonly Guest[];

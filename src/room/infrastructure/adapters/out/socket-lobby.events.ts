@@ -1,3 +1,5 @@
+import type { FinishedGame } from '../../../application/ports/in/finish-game.use-case';
+import type { GameEventsPort } from '../../../application/ports/out/game-events.port';
 import type {
   PlayerQuestionState,
   QuestionEventsPort,
@@ -7,10 +9,15 @@ import type { Server } from 'socket.io';
 import type { LobbyEventsPort } from '../../../application/ports/out/lobby-events.port';
 import type { LobbyClosure } from '../../../domain/lobby';
 
-export class SocketLobbyEvents implements LobbyEventsPort, QuestionEventsPort {
+export class SocketLobbyEvents
+  implements LobbyEventsPort, QuestionEventsPort, GameEventsPort
+{
   private server?: Server;
   attach(server: Server): void {
     this.server = server;
+  }
+  finished(state: FinishedGame): void {
+    this.server?.to(`lobby:${state.roomId}`).emit('game.finished', state);
   }
   opened(state: QuestionState): void {
     this.server?.to(`lobby:${state.roomId}`).emit('question.opened', state);

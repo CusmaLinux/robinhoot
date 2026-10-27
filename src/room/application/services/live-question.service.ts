@@ -61,6 +61,16 @@ export class LiveQuestionService implements LiveQuestionPort {
   }
   private commandRoom(input: StartQuestionInput): Room {
     this.lifecycle.assertHost(input.roomId, input.ownerId, input.connectionId);
+    const room = this.rooms.findById(input.roomId)!;
+    if (room.finishCommand?.commandId === input.commandId)
+      throw new LobbyError('COMMAND_CONFLICT', 'Command ID belongs to finish');
+    if (room.finalizing)
+      throw new LobbyError(
+        'FINALIZATION_IN_PROGRESS',
+        'Finalization is in progress',
+      );
+    if (room.phase === 'finished')
+      throw new LobbyError('WRONG_PHASE', 'Game is finished');
     this.close(input.roomId);
     return this.rooms.findById(input.roomId)!;
   }
@@ -130,6 +140,13 @@ export class LiveQuestionService implements LiveQuestionPort {
   submit(input: SubmitAnswerInput): AnswerReceipt {
     this.lifecycle.assertOpen(input.roomId);
     const room = this.rooms.findById(input.roomId)!;
+    if (room.finalizing)
+      throw new LobbyError(
+        'FINALIZATION_IN_PROGRESS',
+        'Finalization is in progress',
+      );
+    if (room.phase === 'finished')
+      throw new LobbyError('WRONG_PHASE', 'Game is finished');
     const guest = room.guests.find(
       (g) => g.connectionId === input.connectionId,
     );
@@ -299,6 +316,8 @@ export class LiveQuestionService implements LiveQuestionPort {
       (answer) => answer.playerId === playerId,
     );
     return {
+      ...(room.finalizing ? { finalizing: true } : {}),
+      ...(room.report ? { report: room.report } : {}),
       roomId: room.roomId,
       questionId: question.id,
       revision: room.revision,
@@ -327,7 +346,7 @@ export class LiveQuestionService implements LiveQuestionPort {
           (played.scores.find((s) => s.playerId === playerId)?.points ?? 0),
         0,
       ),
-      ...(room.phase === 'question_reveal'
+      ...(['question_reveal', 'finished'].includes(room.phase)
         ? { correctOptionIds: [...question.correctOptionIds] }
         : {}),
     };

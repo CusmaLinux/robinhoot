@@ -61,3 +61,31 @@ of live room data, and bounded five-minute tombstone. No completed report or
 finished event is produced; no report repository exists in this slice.
 Durable completion, ranking, and report persistence remain #58, and owned
 history remains #59. Do not archive this overall change for #57 alone.
+
+
+## Finalization reconciliation — issue #58 (2026-10-27)
+
+Re-read the archived predecessor's resulting main `live-gameplay` spec and the
+merged #57 implementation (`f365092`) before extending its synchronous room
+mutations. `FinishGameService` is a separate inbound use case; the existing
+live-question service retains ownership of scoring and progression. New Symbol
+ports cover finalization, report persistence and completion events, composed in
+`RoomModule`. A pending per-room promise serializes the asynchronous write while
+the synchronous `finalizing` flag blocks conflicting commands and lifecycle
+cancellation. Public phase remains reveal until the transaction commits.
+
+Report IDs equal room UUIDs. The version-1 JSONB document includes owner ID,
+first-attempt completion timestamp, full immutable quiz snapshot, competition
+standings and per-question counts/percentage accuracy. The unique room primary
+key and owner-filtered read return the first committed owned report unchanged.
+Returned/candidate reports are deeply frozen. No source-quiz/account foreign key
+can cascade-delete reports. Automatic migration rollback refuses to drop them.
+
+The original finish fingerprint is checked before revision validation so its
+retry survives roster reconnection revisions after storage failure. Accepted
+start/next IDs conflict with finish, and changed content on the original finish
+ID conflicts. Valid concurrent finish commands share one write; acknowledged
+finish retries return the same report without republishing completion.
+Failed saves preserve the candidate, restore cancellation and settle/rearm any
+host absence. Successful saves disarm absence; finished disconnects never start
+new cancellation timers. History/retention remain #59, so this change stays open.

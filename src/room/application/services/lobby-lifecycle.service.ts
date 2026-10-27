@@ -52,7 +52,31 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
     entry.expiresAt = Infinity;
     entry.cancelQuestion = cancelQuestion;
   }
+  beginFinalization(roomId: string): void {
+    this.rooms.mutate(roomId, (room) => ({ ...room, finalizing: true }));
+    this.active.get(roomId)?.absence?.cancel();
+  }
+  failFinalization(roomId: string): void {
+    this.rooms.mutate(roomId, (room) => ({ ...room, finalizing: false }));
+    this.settle(roomId);
+    const entry = this.active.get(roomId);
+    if (entry?.absence) {
+      entry.absence.cancel = this.runtime.schedule(entry.absence.at, () =>
+        this.settle(roomId),
+      );
+    }
+  }
+  completeFinalization(roomId: string): void {
+    const entry = this.active.get(roomId)!;
+    entry.cancelExpiry();
+    entry.cancelQuestion?.();
+    entry.absence?.cancel();
+    entry.absence = undefined;
+    entry.expiresAt = Infinity;
+  }
   private settle(roomId: string): void {
+    const room = this.rooms.findById(roomId);
+    if (room?.finalizing || room?.phase === 'finished') return;
     const entry = this.active.get(roomId);
     if (!entry) return;
     const deadline = Math.min(entry.expiresAt, entry.absence?.at ?? Infinity);
@@ -92,6 +116,10 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
   disconnect(roomId: string, connectionId: string): void {
     const entry = this.active.get(roomId);
     if (!entry || entry.connectionId !== connectionId) return;
+    if (this.rooms.findById(roomId)?.phase === 'finished') {
+      entry.connectionId = null;
+      return;
+    }
     entry.connectionId = null;
     const absence = { at: this.runtime.now() + 120_000, cancel: () => {} };
     entry.absence = absence;
@@ -119,6 +147,14 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
     const previous = this.closed.get(roomId);
     if (previous) return { ...previous.closure };
     if (connectionId) this.assertHost(roomId, ownerId, connectionId);
+    const room = this.rooms.findById(roomId);
+    if (room?.finalizing)
+      throw new LobbyError(
+        'FINALIZATION_IN_PROGRESS',
+        'Finalization is in progress',
+      );
+    if (room?.phase === 'finished')
+      throw new LobbyError('WRONG_PHASE', 'Game is already finished');
     return this.close(roomId, 'OWNER_CANCELLED')!;
   }
   private close(
