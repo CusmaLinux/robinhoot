@@ -126,17 +126,11 @@ export class LobbyGateway {
     @ConnectedSocket() client: LobbySocket,
     @MessageBody() payload: unknown,
   ) {
-    const input = startInput(payload);
-    const bound = this.rooms.get(client);
-    if (!bound || bound.role !== 'host' || bound.roomId !== input.roomId)
-      throw new LobbyError('FORBIDDEN', 'Connection is not bound as this host');
     return {
       ok: true,
-      data: await this.completion.finish({
-        ...input,
-        ownerId: client.data.user.userId,
-        connectionId: client.id,
-      }),
+      data: await this.completion.finish(
+        this.hostCommandInput(client, payload),
+      ),
     };
   }
 
@@ -153,17 +147,21 @@ export class LobbyGateway {
     payload: unknown,
     kind: 'start' | 'next',
   ) {
+    return {
+      ok: true,
+      data: this.live[kind](this.hostCommandInput(client, payload)),
+    };
+  }
+
+  private hostCommandInput(client: LobbySocket, payload: unknown) {
     const input = startInput(payload);
     const bound = this.rooms.get(client);
     if (!bound || bound.role !== 'host' || bound.roomId !== input.roomId)
       throw new LobbyError('FORBIDDEN', 'Connection is not bound as this host');
     return {
-      ok: true,
-      data: this.live[kind]({
-        ...input,
-        ownerId: client.data.user.userId,
-        connectionId: client.id,
-      }),
+      ...input,
+      ownerId: client.data.user.userId,
+      connectionId: client.id,
     };
   }
 

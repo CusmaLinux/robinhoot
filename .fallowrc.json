@@ -1,9 +1,4 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-  "entry": ["src/database/migrations/*.ts", "test/*.e2e-spec.ts"],
-  "ignoreDependencies": [
-    "class-transformer",
-    "tsconfig-paths",
-    "@nestjs/schematics"
-  ]
+  "entry": ["src/database/migrations/*.ts", "test/*.e2e-spec.ts"]
 }

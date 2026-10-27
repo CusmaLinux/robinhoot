@@ -38,39 +38,9 @@ export class FinishGameService implements FinishGamePort {
   async finish(input: StartQuestionInput): Promise<FinishedGame> {
     this.lifecycle.assertHost(input.roomId, input.ownerId, input.connectionId);
     const room = this.rooms.findById(input.roomId)!;
-    const progression = [
-      ...(room.previousRounds ?? []),
-      ...(room.round ? [room.round] : []),
-    ];
-    if (
-      progression.some((round) => round.commandId === input.commandId) ||
-      (room.finishCommand?.commandId === input.commandId &&
-        room.finishCommand.expectedRevision !== input.expectedRevision)
-    )
-      throw new LobbyError(
-        'COMMAND_CONFLICT',
-        'Command ID was used with different content',
-      );
-    if (room.phase === 'finished')
-      return {
-        roomId: room.roomId,
-        revision: room.revision,
-        phase: 'finished',
-        report: room.report!,
-      };
-    if (
-      room.phase !== 'question_reveal' ||
-      room.round?.questionIndex !== room.quiz.questions.length - 1
-    )
-      throw new LobbyError(
-        'WRONG_PHASE',
-        'Finish requires the final question reveal',
-      );
-    if (
-      room.finishCommand?.commandId !== input.commandId &&
-      room.revision !== input.expectedRevision
-    )
-      throw new LobbyError('STALE_REVISION', 'Room revision has changed');
+    this.assertCommand(room, input);
+    if (room.phase === 'finished') return this.finishedState(room);
+    this.assertFinalReveal(room, input);
     const pending = this.pending.get(room.roomId);
     if (pending) return pending;
     this.rooms.mutate(room.roomId, (current) => ({
@@ -89,6 +59,44 @@ export class FinishGameService implements FinishGamePort {
     } finally {
       this.pending.delete(room.roomId);
     }
+  }
+  private assertCommand(room: Room, input: StartQuestionInput): void {
+    const progression = [
+      ...(room.previousRounds ?? []),
+      ...(room.round ? [room.round] : []),
+    ];
+    if (
+      progression.some((round) => round.commandId === input.commandId) ||
+      (room.finishCommand?.commandId === input.commandId &&
+        room.finishCommand.expectedRevision !== input.expectedRevision)
+    )
+      throw new LobbyError(
+        'COMMAND_CONFLICT',
+        'Command ID was used with different content',
+      );
+  }
+  private finishedState(room: Room): FinishedGame {
+    return {
+      roomId: room.roomId,
+      revision: room.revision,
+      phase: 'finished',
+      report: room.report!,
+    };
+  }
+  private assertFinalReveal(room: Room, input: StartQuestionInput): void {
+    if (
+      room.phase !== 'question_reveal' ||
+      room.round?.questionIndex !== room.quiz.questions.length - 1
+    )
+      throw new LobbyError(
+        'WRONG_PHASE',
+        'Finish requires the final question reveal',
+      );
+    if (
+      room.finishCommand?.commandId !== input.commandId &&
+      room.revision !== input.expectedRevision
+    )
+      throw new LobbyError('STALE_REVISION', 'Room revision has changed');
   }
   private async persist(room: Room): Promise<FinishedGame> {
     const candidate =
@@ -117,12 +125,7 @@ export class FinishGameService implements FinishGamePort {
       report,
     }));
     this.lifecycle.completeFinalization(room.roomId);
-    const state: FinishedGame = {
-      roomId: next.roomId,
-      revision: next.revision,
-      phase: 'finished',
-      report,
-    };
+    const state = this.finishedState(next);
     this.events.finished(state);
     return state;
   }

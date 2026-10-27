@@ -122,3 +122,31 @@ and the two pre-existing auth-test warnings. Database-backed checks used only
 `robinhoot_issue58_test` at loopback port 55458 with dedicated test credentials.
 Ports-and-adapters direction and Symbol DI were reviewed in the final diff;
 domain report code has no framework, transport, or persistence imports.
+
+### PR #79 Fallow follow-up (2026-10-27)
+
+Reproduced the failing CI audit against base `f365092` using the CI log's
+Fallow 3.36.0: four introduced complexity findings and two introduced clone
+groups failed the new-only gate. Unit/e2e success alone did not satisfy that
+gate because the audit job supplies no measured coverage and uses estimated
+CRAP scores. Local stale coverage artifacts were preserved outside the project
+during CI-equivalent audit checks and restored afterward.
+
+Refactored answer target validation and accepted-answer retry lookup into
+focused private helpers, preserving their order before deadline/phase checks.
+Separated finish fingerprint/phase validation and finished-state projection
+from persistence orchestration. Separated lifecycle expiration-reason decisions
+from cancellation settlement. Host start/next/finish now share one validated
+bound-owner input builder. The two-question transport test shares question and
+answer helpers and retains its complete standings/count assertions; it also
+asserts successful answer acceptance. Removed only the three dependency-ignore
+entries Fallow identified as redundant. No audit thresholds, gates, suppressions
+or workflow failure policies were weakened.
+
+Final follow-up verification: Fallow 3.34.1 and 3.36.0 both pass the full PR
+new-only audit against `f365092`, with zero introduced complexity, duplication,
+dead-code, styling or diff-risk findings. Four complexity findings and one clone
+group are inherited from the base. All 197 unit tests and all 130 e2e tests pass;
+the e2e run used only the isolated `robinhoot_issue58_test` database. Build,
+source/test TypeScript, formatting, whitespace, and read-only ESLint pass;
+ESLint retains only the two existing auth-test warnings.

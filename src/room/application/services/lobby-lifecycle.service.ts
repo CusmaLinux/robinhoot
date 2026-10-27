@@ -79,14 +79,16 @@ export class LobbyLifecycleService implements LobbyLifecyclePort {
     if (room?.finalizing || room?.phase === 'finished') return;
     const entry = this.active.get(roomId);
     if (!entry) return;
+    const reason = this.expirationReason(entry);
+    if (reason) this.close(roomId, reason);
+  }
+  private expirationReason(entry: ActiveLobby): LobbyClosureReason | null {
     const deadline = Math.min(entry.expiresAt, entry.absence?.at ?? Infinity);
     if (this.runtime.now() >= deadline)
-      this.close(
-        roomId,
-        entry.absence && entry.absence.at < entry.expiresAt
-          ? 'HOST_TIMEOUT'
-          : 'LOBBY_EXPIRED',
-      );
+      return entry.absence && entry.absence.at < entry.expiresAt
+        ? 'HOST_TIMEOUT'
+        : 'LOBBY_EXPIRED';
+    return null;
   }
   assertOpen(roomId: string): void {
     this.settle(roomId);

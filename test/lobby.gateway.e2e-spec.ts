@@ -492,63 +492,73 @@ describe('Lobby Socket.IO transport', () => {
       await first;
     }
   });
+  async function readQuestion(host: Socket): Promise<QuestionState> {
+    const result = await ack<QuestionState>(host, 'state.sync', {
+      roomId: room.roomId,
+    });
+    if (!result.ok) throw new Error(result.error.code);
+    return result.data;
+  }
+  async function openQuestion(
+    host: Socket,
+    event: 'host.start' | 'host.next',
+    expectedRevision: number,
+  ): Promise<QuestionState> {
+    const result = await ack<QuestionState>(host, event, {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision,
+    });
+    if (!result.ok) throw new Error(result.error.code);
+    return result.data;
+  }
+  async function answerCorrectly(
+    players: Socket[],
+    question: QuestionState,
+  ): Promise<void> {
+    for (const player of players) {
+      expect(
+        await ack(player, 'answer.submit', {
+          roomId: room.roomId,
+          questionId: question.questionId,
+          optionId: question.question.options[0].id,
+          submissionId: randomUUID(),
+        }),
+      ).toMatchObject({ ok: true });
+    }
+  }
+  async function finishAtCurrentReveal(
+    host: Socket,
+  ): Promise<Ack<FinishedGame>> {
+    const state = await readQuestion(host);
+    return ack<FinishedGame>(host, 'host.finish', {
+      roomId: room.roomId,
+      commandId: randomUUID(),
+      expectedRevision: state.revision,
+    });
+  }
   it('finishes a two-question game with stable 1,1,3 standings and frozen missing counts', async () => {
     const { host, alice, bob } = await twoQuestionActors();
     const absent = await connect();
     await join(alice, 'Alice');
     await join(bob, 'Bob');
     await join(absent, 'Carol');
-    const first = await ack<QuestionState>(host, 'host.start', {
-      roomId: room.roomId,
-      commandId: randomUUID(),
-      expectedRevision: 3,
-    });
-    if (!first.ok) throw new Error(first.error.code);
+    const first = await openQuestion(host, 'host.start', 3);
     await disconnectClient(absent);
-    for (const player of [alice, bob])
-      await ack(player, 'answer.submit', {
-        roomId: room.roomId,
-        questionId: first.data.questionId,
-        optionId: first.data.question.options[0].id,
-        submissionId: randomUUID(),
-      });
+    await answerCorrectly([alice, bob], first);
     runtime.advance(20_000);
-    let current = await ack<QuestionState>(host, 'state.sync', {
-      roomId: room.roomId,
+    expect(await finishAtCurrentReveal(host)).toMatchObject({
+      ok: false,
+      error: { code: 'WRONG_PHASE' },
     });
-    if (!current.ok) throw new Error(current.error.code);
-    expect(
-      await ack(host, 'host.finish', {
-        roomId: room.roomId,
-        commandId: randomUUID(),
-        expectedRevision: current.data.revision,
-      }),
-    ).toMatchObject({ ok: false, error: { code: 'WRONG_PHASE' } });
-    const second = await ack<QuestionState>(host, 'host.next', {
-      roomId: room.roomId,
-      commandId: randomUUID(),
-      expectedRevision: current.data.revision,
-    });
-    if (!second.ok) throw new Error(second.error.code);
-    for (const player of [alice, bob])
-      await ack(player, 'answer.submit', {
-        roomId: room.roomId,
-        questionId: second.data.questionId,
-        optionId: second.data.question.options[0].id,
-        submissionId: randomUUID(),
-      });
+    const second = await openQuestion(
+      host,
+      'host.next',
+      (await readQuestion(host)).revision,
+    );
+    await answerCorrectly([alice, bob], second);
     runtime.advance(30_000);
-    current = await ack<QuestionState>(host, 'state.sync', {
-      roomId: room.roomId,
-    });
-    if (!current.ok) throw new Error(current.error.code);
-    expect(
-      await ack(host, 'host.finish', {
-        roomId: room.roomId,
-        commandId: randomUUID(),
-        expectedRevision: current.data.revision,
-      }),
-    ).toMatchObject({
+    expect(await finishAtCurrentReveal(host)).toMatchObject({
       ok: true,
       data: {
         report: {
