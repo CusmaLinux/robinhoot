@@ -89,3 +89,36 @@ finish retries return the same report without republishing completion.
 Failed saves preserve the candidate, restore cancellation and settle/rearm any
 host absence. Successful saves disarm absence; finished disconnects never start
 new cancellation timers. History/retention remain #59, so this change stays open.
+
+
+## History and retention reconciliation — issue #59 (2026-10-27)
+
+Re-read the actual main `live-gameplay`, `game-lobby`, and `quiz-authoring`
+specifications, the archived `play-live-question` prerequisite, and merged #58
+before extending the report contract. The predecessor remains fully archived;
+this slice implements the final retrieval tasks of the current change.
+
+`GET /reports` returns owned version-1 documents newest first, stabilizing equal
+completion timestamps by room UUID. `GET /reports/:id` validates the UUID and
+returns the original owned document or an indistinguishable missing/foreign 404.
+Global account JWT validation supplies owner identity; admin status has no
+cross-owner override, and room credentials cannot authenticate historical reads.
+A separate read use-case/port keeps history independent of live-room services;
+Symbol DI shares the Kysely adapter with the existing write port. Stored documents
+and public report schemas retain their own snapshot format independently of
+editable source quizzes.
+
+The proposed ten-minute FINISHED retention is now the fixed implementation
+policy. Finalization schedules one cleanup deadline, checked by both timer and
+live reads. Rebinding, synchronization and retries cannot extend it. Cleanup
+removes the room aggregate, credentials, receipts, indexes and lifecycle entry,
+without cancellation events, tombstones or durable-report deletion. Stale
+callbacks cannot affect a replacement UUID. Persisted history remains readable
+after cleanup, source edits/deletion and a fresh backend instance.
+
+The [history contract](../../../docs/contracts/report-history.md) provides the
+API/UI handoff, exact 1/1/3 rankings for 2000/2000/1000 totals, 25/75 percent
+question-count examples, security errors, lifetime policy and executable
+HTTP/Socket.IO acceptance evidence. UI rendering and professor rehearsal remain
+external follow-up. Durable report retention/deletion remains an operational
+policy to settle before the pilot.

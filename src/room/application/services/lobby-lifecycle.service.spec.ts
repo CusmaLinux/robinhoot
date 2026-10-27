@@ -235,4 +235,35 @@ describe('Lobby lifecycle', () => {
     expect(jest.getTimerCount()).toBe(0);
     expect(events.closed).not.toHaveBeenCalled();
   });
+  it('retains finished rooms for ten minutes then releases their credentials, receipts, indexes and timers', async () => {
+    rooms.mutate(room.roomId, (current) => ({ ...current, phase: 'finished' }));
+    lifecycle.completeFinalization(room.roomId);
+    jest.advanceTimersByTime(599_999);
+    expect(rooms.findById(room.roomId)?.phase).toBe('finished');
+    lifecycle.bind(room.roomId, 'owner', 'returned');
+    jest.advanceTimersByTime(1);
+    expect(rooms.findById(room.roomId)).toBeNull();
+    expect(rooms.findByPin(room.pin)).toBeNull();
+    expect(jest.getTimerCount()).toBe(0);
+    expect(events.closed).not.toHaveBeenCalled();
+    const replacement = await rooms.create(
+      { ownerId: 'owner', quizId: 'quiz', requestId: 'new' },
+      snapshot,
+    );
+    callbacks.forEach((callback) => callback());
+    expect(rooms.findById(replacement.roomId)).toEqual(replacement);
+  });
+
+  it('enforces finished retention on reads even when its cleanup callback is delayed', () => {
+    rooms.mutate(room.roomId, (current) => ({ ...current, phase: 'finished' }));
+    lifecycle.completeFinalization(room.roomId);
+    jest.setSystemTime(Date.now() + 600_000);
+    expect(() => lifecycle.bind(room.roomId, 'owner', 'late')).toThrow(
+      'Room is not owned',
+    );
+    expect(rooms.findById(room.roomId)).toBeNull();
+    callbacks.forEach((callback) => callback());
+    expect(events.closed).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  });
 });

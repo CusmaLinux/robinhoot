@@ -1,3 +1,7 @@
+import { READ_REPORTS_PORT } from '../application/ports/in/read-reports.use-case';
+import { REPORT_HISTORY_PORT } from '../application/ports/out/report-history.port';
+import { ReadReportsService } from '../application/services/read-reports.service';
+import { ReportController } from './adapters/in/report.controller';
 import { FINISH_GAME_PORT } from '../application/ports/in/finish-game.use-case';
 import { GAME_EVENTS_PORT } from '../application/ports/out/game-events.port';
 import { REPORT_REPOSITORY_PORT } from '../application/ports/out/report.repository.port';
@@ -36,9 +40,11 @@ import { OwnedQuizSnapshotReader } from './adapters/out/owned-quiz-snapshot.read
 
 @Module({
   imports: [QuizModule],
-  controllers: [RoomController],
+  controllers: [RoomController, ReportController],
   providers: [
     LobbyGateway,
+    { provide: READ_REPORTS_PORT, useClass: ReadReportsService },
+    { provide: REPORT_HISTORY_PORT, useExisting: REPORT_REPOSITORY_PORT },
     { provide: FINISH_GAME_PORT, useClass: FinishGameService },
     { provide: GAME_EVENTS_PORT, useExisting: SocketLobbyEvents },
     { provide: REPORT_REPOSITORY_PORT, useClass: ReportKyselyAdapter },
