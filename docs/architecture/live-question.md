@@ -141,7 +141,7 @@ sequenceDiagram
   Live->>Live: Question deadline closes and scores once while host absent
   Host->>Gateway: host.bind using expired JWT
   Gateway->>Auth: Validate again
-  Auth-->>Host: UNAUTHORIZED; absence deadline unchanged
+  Auth-->>Host: UNAUTHORIZED, absence deadline unchanged
   Host->>Gateway: host.bind after owner login within 120 seconds
   Gateway->>Auth: Validate current owner JWT
   Gateway->>Lifecycle: Restore host authority and cancel absence timer
