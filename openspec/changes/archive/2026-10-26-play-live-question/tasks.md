@@ -25,7 +25,7 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 
 ## Workflow follow-up
 
-- Published issue tracking: [#54](https://github.com/CusmaLinux/robinhoot/issues/54) — 1.1–1.4 and deadline closure portion of 3.1; [#55](https://github.com/CusmaLinux/robinhoot/issues/55) — 2.1–2.4 and scoring portion of 3.1; [#56](https://github.com/CusmaLinux/robinhoot/issues/56) — 3.2–3.4. See [issue map](../../../docs/mvp-issue-map.md) for blockers and classification. Issue creation does not complete these tasks.
+- Published issue tracking: [#54](https://github.com/CusmaLinux/robinhoot/issues/54) — 1.1–1.4 and deadline closure portion of 3.1; [#55](https://github.com/CusmaLinux/robinhoot/issues/55) — 2.1–2.4 and scoring portion of 3.1; [#56](https://github.com/CusmaLinux/robinhoot/issues/56) — 3.2–3.4. See [issue map](../../../../docs/mvp-issue-map.md) for blockers and classification. Issue creation does not complete these tasks.
 
 - Review the implemented diff and acceptance evidence before archiving this change.
 - Archive after API implementation/verification and documented contract handoff, then confirm its requirements are present in main specs; UI completion is tracked separately.
@@ -60,10 +60,10 @@ and an explicit test JWT secret. The production question runtime has 100% unit c
 and real-client coverage was supplied to the advisory Fallow audit, which passes
 with zero dead-code, complexity, or duplication findings.
 
-See [wire contract and real-client example](../../../docs/contracts/live-question.md),
-[component/sequence/state diagrams](../../../docs/architecture/live-question.md),
-[fake-time suite](../../../src/room/application/services/live-question.service.spec.ts),
-and [real-client acceptance](../../../test/lobby.gateway.e2e-spec.ts).
+See [wire contract and real-client example](../../../../docs/contracts/live-question.md),
+[component/sequence/state diagrams](../../../../docs/architecture/live-question.md),
+[fake-time suite](../../../../src/room/application/services/live-question.service.spec.ts),
+and [real-client acceptance](../../../../test/lobby.gateway.e2e-spec.ts).
 Application mutations remain synchronous and immutable; time/scheduling and
 publication use Symbol ports. Architecture direction was reviewed manually;
 Fallow's architecture boundaries are not configured. No production database,
@@ -134,3 +134,10 @@ No schema migration, production database, UI implementation, or deployment.
 
 Tasks 3.2–3.4 are complete (12/12 total). API verification and contract handoff are
 recorded; retain the change for PR review before its separate final archival.
+
+Archival gate — issue #57 (2026-10-26): reviewed the merged implementation and
+contract evidence, reran all 160 unit / 128 integration / 104 e2e tests plus
+build, type, formatting, read-only lint, and strict OpenSpec checks. Synced six
+live-gameplay requirements to main, archived this completed change, and re-read
+the resulting main specification before extending progression. Dedicated test
+database only; the two existing auth-test lint warnings remain unchanged.

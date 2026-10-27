@@ -24,6 +24,7 @@ export interface RoomMetadata {
 
 export interface Room extends RoomMetadata {
   readonly round?: LiveRound;
+  readonly previousRounds?: readonly LiveRound[];
   readonly guests: readonly Guest[];
   readonly host: { readonly ownerId: string };
   readonly creationRequestId: string;

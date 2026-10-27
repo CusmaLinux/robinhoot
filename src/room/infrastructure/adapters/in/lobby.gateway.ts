@@ -115,13 +115,29 @@ export class LobbyGateway {
     @ConnectedSocket() client: LobbySocket,
     @MessageBody() payload: unknown,
   ) {
+    return this.questionCommand(client, payload, 'start');
+  }
+
+  @SubscribeMessage('host.next')
+  next(
+    @ConnectedSocket() client: LobbySocket,
+    @MessageBody() payload: unknown,
+  ) {
+    return this.questionCommand(client, payload, 'next');
+  }
+
+  private questionCommand(
+    client: LobbySocket,
+    payload: unknown,
+    kind: 'start' | 'next',
+  ) {
     const input = startInput(payload);
     const bound = this.rooms.get(client);
     if (!bound || bound.role !== 'host' || bound.roomId !== input.roomId)
       throw new LobbyError('FORBIDDEN', 'Connection is not bound as this host');
     return {
       ok: true,
-      data: this.live.start({
+      data: this.live[kind]({
         ...input,
         ownerId: client.data.user.userId,
         connectionId: client.id,

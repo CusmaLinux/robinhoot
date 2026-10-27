@@ -130,7 +130,8 @@ mutate the round. A typical rejection is:
 ```
 
 `state.sync` and `session.restore` return the receiving guest's `acceptedAnswer`
-receipt (or `null`), with score zero while open. This recovers lost acceptance
+receipt (or `null`), with the cumulative total from earlier reveals while open
+(zero on the first question). This recovers lost acceptance
 acknowledgements without disclosing correctness. The existing restoration
 credential is required only by `session.restore`; it is never an answer field.
 Other guests and the host receive no private choices or receipts. Roster
@@ -149,8 +150,8 @@ all-answered nor retries shorten the timer. Offline players retain their result
 for restoration.
 Repeated or stale callbacks cannot reveal again. A delayed callback is also
 settled by a current state read or accepted start retry. Early callbacks rearm
-for the remaining time. Reveal waits for later owner progression; this issue
-never opens the second snapshot question.
+for the remaining time. Reveal waits for owner progression. `host.start` opens only the first snapshot
+question; [host.next](game-progression.md) opens later questions.
 
 Retry the **same** `commandId` and `expectedRevision` after an acknowledgement
 timeout. The receipt is checked before the current revision/phase guard, so an
@@ -300,3 +301,6 @@ also cover lost acknowledgements, reconnect/retry, simultaneous submissions,
 forged identities, invalid payloads, and private per-player reveals. UI rendering, countdown estimation, storage, and stale-update
 presentation belong to the separate UI repository. This document is its API
 handoff; no UI repository URL is assumed.
+
+For ordered later questions, cumulative scores, retained old-question receipts,
+and early ending, see [question progression](game-progression.md).

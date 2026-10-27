@@ -32,3 +32,32 @@ Non-goals: partial reports for cancelled games, cross-game student identity, exp
 ## Migration Plan
 
 Add reports table/index and repository before enabling finish commands and history endpoints. Verify migration and atomic writes on the test database. Publish ranking/count/error examples for the UI and deploy compatible API readers first. On rollback disable new finalization if necessary and keep stored reports backed up/readable. Do not drop report data as an automatic rollback.
+
+## Predecessor reconciliation — issue #57 (2026-10-26)
+
+Before extending live transitions, reviewed the merged #54–#56 implementation,
+full 12/12 predecessor task evidence, recovery transcript, and current main
+`game-lobby`, `quiz-authoring`, `user-auth`, and `jwt-guard` specifications.
+Reran 160 unit, 128 integration, and 104 e2e tests plus build, type, formatting,
+and read-only lint checks on the dedicated loopback test database. Synced all
+six `live-gameplay` requirements and archived the predecessor as
+`2026-10-26-play-live-question`, then re-read the resulting main spec.
+
+The agreed #57 contract authorizes tasks 1.1–1.4 and the one-behavior TDD plan.
+Keep synchronous immutable room mutations, existing Symbol DI, current owner
+connection checks and per-message JWT validation. `host.next` uses the same
+UUID/revision payload as start and returns the current public question state.
+Retain revealed rounds inside the room (bounded by twenty snapshot questions),
+including start/next command fingerprints, frozen initial eligibility, private
+answer receipts, and per-question scores. Lookup accepted commands before
+phase/revision checks; ID reuse across command types is `COMMAND_CONFLICT`.
+Current guest scores sum all revealed rounds; current acceptance is question-local.
+Old accepted answer retries remain retrievable after progression; a new answer
+for an old question is `WRONG_QUESTION`.
+
+Reuse `host.cancel` and the existing lifecycle closure: `lobby.closed`,
+`phase:closed`, reason `OWNER_CANCELLED`, one revision, timer release, removal
+of live room data, and bounded five-minute tombstone. No completed report or
+finished event is produced; no report repository exists in this slice.
+Durable completion, ranking, and report persistence remain #58, and owned
+history remains #59. Do not archive this overall change for #57 alone.
