@@ -80,3 +80,23 @@ socket adapter excludes guests from the public reveal and emits their private
 view only while still subscribed. Roster broadcasts select only display fields.
 No new store, credentials, migration, or DI token is required. Full active-round
 recovery/host-absence acceptance and final archival remain #56.
+
+## Active recovery reconciliation — issue #56 (2026-10-26)
+
+Issue #55 is merged at `972782b`; `add-game-lobby` remains archived and its actual
+main `game-lobby`, `quiz-authoring`, `user-auth`, and `jwt-guard` specs were re-read.
+The agreed issue contract supplies the interface and behavior priorities for
+one-test/one-behavior TDD. Existing session restoration, frozen answer receipts,
+role projections, and host lifecycle ports already implement the recovery path;
+keep those contracts and Symbol bindings. Enforce the lifecycle cutoff for
+public host question snapshots too, including reads while at reveal. A retained
+closed room now rejects either role's question snapshot with `ROOM_CLOSED` rather
+than a stale public reveal or a misleading absent-question result.
+
+Real-client subscription gates verify reveal during restore/sync/bind, including
+withheld close callbacks. The integrated host/two-guest rehearsal verifies lost
+acknowledgement, open and reveal restoration, own-only receipts and scores,
+expired JWT and foreign-owner rejection, fresh HTTP login before cutoff, and
+unchanged reveal after the original timeout. A separate rehearsal verifies
+failed authentication does not extend the cutoff and cancellation invalidates
+accepted retries and restoration. See `docs/contracts/active-game-recovery.md`.

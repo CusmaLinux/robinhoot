@@ -1,6 +1,8 @@
 # Restoring a lobby session
 
 Implemented for [#52](https://github.com/CusmaLinux/robinhoot/issues/52).
+Active open/reveal recovery is verified for [#56](https://github.com/CusmaLinux/robinhoot/issues/56);
+see the [recovery contract and rehearsal](active-game-recovery.md).
 This extends the [admission contract](lobby-admission.md) for the separate UI
 repository. HTTP room creation and account authentication are unchanged.
 
@@ -12,10 +14,12 @@ privately. On a fresh connection, emit exactly two string fields:
 ```js
 const returningGuest = io(apiOrigin);
 returningGuest.on('lobby.roster', applyState); // register before restore
-const restored = await returningGuest.timeout(5000).emitWithAck('session.restore', {
-  roomId: savedSession.roomId,
-  credential: savedSession.credential,
-});
+const restored = await returningGuest
+  .timeout(5000)
+  .emitWithAck('session.restore', {
+    roomId: savedSession.roomId,
+    credential: savedSession.credential,
+  });
 if (restored.ok) applyState(restored.data.state);
 ```
 
@@ -45,7 +49,13 @@ authority. No account token is needed for guest restoration. Invalid or foreign
 credentials and unknown rooms return the same failure without roster data:
 
 ```json
-{"ok":false,"error":{"code":"INVALID_CREDENTIAL","message":"Invalid room credential"}}
+{
+  "ok": false,
+  "error": {
+    "code": "INVALID_CREDENTIAL",
+    "message": "Invalid room credential"
+  }
+}
 ```
 
 Wrong shapes, extra/non-string fields, invalid UUIDs, or a malformed credential
@@ -98,9 +108,12 @@ function applyState(next) {
 }
 ```
 
-Never replace a newer event with an older acknowledgement. Snapshots are full
-safe-state replacements, not patches. No correct-answer content, account IDs,
-connection identifiers, credential verifiers, or other players' credentials are
+Never replace a newer event with an older acknowledgement. Snapshots from restore/sync/bind are full
+safe-state replacements, not patches. `lobby.roster` remains a display-only
+update during gameplay: retain the current question fields or request `state.sync`
+when a roster event reports a newer revision. A receipt's original acceptance
+revision is independent of the current snapshot revision. Before reveal, correct-answer content is omitted. Account IDs,
+connection identifiers, credential verifiers, and other players' credentials are never
 included. Sync itself does not mutate revision or broadcast a roster.
 
 ## Verification and handoff

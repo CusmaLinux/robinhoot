@@ -109,5 +109,51 @@ Subscription completes before authority revalidation and question projection;
 start/reveal during a delayed subscription is therefore reflected in the
 acknowledgement. Roster events carry only display state. Complete question
 snapshots use explicit public fields; correct options are projected only at
-reveal. Answer acceptance never includes correctness. Full recovery acceptance
-(#56), progression, and durable reporting remain later slices. The live-question OpenSpec change stays active.
+reveal. Answer acceptance never includes correctness. The [active recovery acceptance record](../contracts/active-game-recovery.md)
+verifies this boundary through real clients. Progression and durable reporting
+remain separate changes.
+
+## Active recovery and host absence
+
+Both host and guest question snapshots settle lifecycle deadlines, including
+while already at reveal. A delayed host-timeout callback cannot let a public
+host snapshot bypass cancellation. A closed snapshot fails with `ROOM_CLOSED`
+and the retained reason instead of returning stale reveal or lobby data.
+The gateway completes subscription, rechecks the actor, then synchronously
+combines display roster and the current question projection. A read can settle
+a delayed reveal before returning its newer revision and fixed scores.
+
+```mermaid
+sequenceDiagram
+  participant Guest
+  participant Gateway
+  participant Auth as JWT validator
+  participant Lifecycle
+  participant Live
+  participant Host
+  Host->>Gateway: Disconnect
+  Gateway->>Lifecycle: Start fixed 120-second absence window
+  Guest->>Gateway: session.restore(roomId, credential)
+  Gateway->>Gateway: Restore identity and complete subscription
+  Gateway->>Live: Project current question for current guest connection
+  Live->>Lifecycle: Enforce room cancellation deadline
+  Live-->>Guest: Current revision, deadline, own receipt and score
+  Live->>Live: Question deadline closes and scores once while host absent
+  Host->>Gateway: host.bind using expired JWT
+  Gateway->>Auth: Validate again
+  Auth-->>Host: UNAUTHORIZED; absence deadline unchanged
+  Host->>Gateway: host.bind after owner login within 120 seconds
+  Gateway->>Auth: Validate current owner JWT
+  Gateway->>Lifecycle: Restore host authority and cancel absence timer
+  Gateway->>Live: Read current public reveal after subscription
+  Live-->>Host: Current revision and reveal without guest receipts
+```
+
+Host absence changes connection authority rather than question phase. Open
+still transitions to reveal at the original deadline, and reveal remains until
+owner-controlled progression in the next change. Successful owner return before
+the cutoff cancels absence without reopening or rescoring. Failed authentication
+or foreign ownership cannot cancel or extend it. At the cutoff, cancellation
+wins even if its callback is delayed; receipts and guest credentials lose their
+authority with the room. A later disconnect begins a new absence window only for
+the then-current bound host.

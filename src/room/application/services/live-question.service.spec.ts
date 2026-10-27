@@ -473,7 +473,51 @@ describe('Timed first question', () => {
     monotonic += 20_000;
     callbacks.forEach((callback) => callback());
     expect(events.revealed).not.toHaveBeenCalled();
-    expect(live.snapshot(room.roomId)).toBeNull();
+    expect(() => live.snapshot(room.roomId)).toThrow(
+      expect.objectContaining({ code: 'ROOM_CLOSED' }) as Error,
+    );
+  });
+
+  it('rejects a host snapshot at the absence cutoff even when cancellation callbacks are delayed', () => {
+    start();
+    lifecycle.disconnect(room.roomId, 'host');
+    monotonic += 20_000;
+    live.close(room.roomId);
+    jest.setSystemTime(Date.now() + 120_000);
+    expect(() => live.snapshot(room.roomId)).toThrow(
+      expect.objectContaining({
+        code: 'ROOM_CLOSED',
+        message: 'HOST_TIMEOUT',
+      }) as Error,
+    );
+    expect(rooms.findById(room.roomId)).toBeNull();
+  });
+
+  it('preserves the scored reveal when the owner returns just before the absence deadline', () => {
+    const opened = start();
+    const receipt = submit();
+    lifecycle.disconnect(room.roomId, 'host');
+    monotonic += 20_000;
+    jest.advanceTimersByTime(20_000);
+    const revealed = live.snapshot(room.roomId, 'guest');
+    jest.advanceTimersByTime(99_999);
+    lifecycle.bind(room.roomId, 'owner', 'returning-host');
+    jest.advanceTimersByTime(1);
+    expect(live.snapshot(room.roomId, 'guest')).toMatchObject({
+      phase: 'question_reveal',
+      revision: revealed!.revision,
+      deadline: opened.deadline,
+      acceptedAnswer: receipt,
+      score: 1000,
+    });
+    expect(() => start({ connectionId: 'host' })).toThrow(
+      expect.objectContaining({ code: 'SESSION_REPLACED' }) as Error,
+    );
+    expect(start({ connectionId: 'returning-host' })).toMatchObject({
+      phase: 'question_reveal',
+      revision: revealed!.revision,
+    });
+    expect(jest.getTimerCount()).toBe(0);
   });
 
   it('closes on time while the host is absent', () => {
