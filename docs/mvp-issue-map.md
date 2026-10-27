@@ -35,7 +35,7 @@ OpenSpec: [proposal](../openspec/changes/archive/2026-10-26-add-game-lobby/propo
 
 ## 3. Timed live question
 
-OpenSpec: [proposal](../openspec/changes/play-live-question/proposal.md), [design](../openspec/changes/play-live-question/design.md), [tasks](../openspec/changes/play-live-question/tasks.md).
+OpenSpec: [proposal](../openspec/changes/archive/2026-10-26-play-live-question/proposal.md), [design](../openspec/changes/archive/2026-10-26-play-live-question/design.md), [tasks](../openspec/changes/archive/2026-10-26-play-live-question/tasks.md).
 
 | Issue | Type | Task coverage | Blocked by |
 | --- | --- | --- | --- |
@@ -45,7 +45,7 @@ OpenSpec: [proposal](../openspec/changes/play-live-question/proposal.md), [desig
 
 ## 4. Complete games and durable reports
 
-OpenSpec: [proposal](../openspec/changes/finish-game-with-results/proposal.md), [design](../openspec/changes/finish-game-with-results/design.md), [tasks](../openspec/changes/finish-game-with-results/tasks.md).
+OpenSpec: [proposal](../openspec/changes/archive/2026-10-27-finish-game-with-results/proposal.md), [design](../openspec/changes/archive/2026-10-27-finish-game-with-results/design.md), [tasks](../openspec/changes/archive/2026-10-27-finish-game-with-results/tasks.md).
 
 | Issue | Type | Task coverage | Blocked by |
 | --- | --- | --- | --- |

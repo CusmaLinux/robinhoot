@@ -25,7 +25,7 @@ Work one tested behavior at a time: failing test, minimal implementation, then r
 
 ## Workflow follow-up
 
-- Published issue tracking: [#57](https://github.com/CusmaLinux/robinhoot/issues/57) — 1.1–1.4; [#58](https://github.com/CusmaLinux/robinhoot/issues/58) — 2.1–2.4; [#59](https://github.com/CusmaLinux/robinhoot/issues/59) — 3.1–3.4. See [issue map](../../../docs/mvp-issue-map.md) for blockers and classification. Issue creation does not complete these tasks.
+- Published issue tracking: [#57](https://github.com/CusmaLinux/robinhoot/issues/57) — 1.1–1.4; [#58](https://github.com/CusmaLinux/robinhoot/issues/58) — 2.1–2.4; [#59](https://github.com/CusmaLinux/robinhoot/issues/59) — 3.1–3.4. See [issue map](../../../../docs/mvp-issue-map.md) for blockers and classification. Issue creation does not complete these tasks.
 
 - Review the implemented diff and acceptance evidence before archiving this change.
 - Archive after API implementation/verification and documented contract handoff, then confirm its requirements are present in main specs; UI completion is tracked separately.
@@ -53,10 +53,10 @@ and terminal cancellation feedback with later answer/progression/restore denial.
 Cancellation reuses the existing lifecycle and creates no completed report;
 there is no report repository or completion writer in this slice.
 
-See [wire contract and two-question examples](../../../docs/contracts/game-progression.md),
-[component/sequence/state documentation](../../../docs/architecture/live-question.md),
-[fake-time verification](../../../src/room/application/services/live-question.service.spec.ts),
-and [real transport acceptance](../../../test/lobby.gateway.e2e-spec.ts).
+See [wire contract and two-question examples](../../../../docs/contracts/game-progression.md),
+[component/sequence/state documentation](../../../../docs/architecture/live-question.md),
+[fake-time verification](../../../../src/room/application/services/live-question.service.spec.ts),
+and [real transport acceptance](../../../../test/lobby.gateway.e2e-spec.ts).
 
 Tasks 1.1–1.4 are complete (4/12 overall). Keep the remaining eight tasks and
 archival pending for #58–#59. API/UI handoff is documented; UI implementation,
@@ -103,8 +103,8 @@ broadcasts, saved facts, two-question 1,1,3 totals, missing disconnected players
 storage/ack response loss, concurrent finish versus cancel/answer, restoration
 retry and JWT/binding/payload errors. The versioned payload, errors, rollback
 policy, API/UI handoff and component/sequence/state diagrams are documented in
-[the finalization contract](../../../docs/contracts/game-finalization.md) and
-[the architecture](../../../docs/architecture/live-question.md).
+[the finalization contract](../../../../docs/contracts/game-finalization.md) and
+[the architecture](../../../../docs/architecture/live-question.md).
 
 The additional integration file exceeded ESLint's eight-file fallback project
 limit. Tests now have an explicit TypeScript project; three existing OpenAPI
@@ -186,10 +186,18 @@ unconfigured, so those counts are not measured guarantees; imports, Symbol DI,
 source-independent history and lifecycle/persistence separation were reviewed
 directly.
 
-The [history contract](../../../docs/contracts/report-history.md) documents
+The [history contract](../../../../docs/contracts/report-history.md) documents
 ranking/difficulty examples, errors, response ordering, expiry, verification and
 the API/UI handoff. Component, sequence and state diagrams are updated in
-[the architecture](../../../docs/architecture/live-question.md). API work is
+[the architecture](../../../../docs/architecture/live-question.md). API work is
 ready for archival review; UI screens and charts, durable-data retention policy,
 and joint professor rehearsal remain external follow-up. The change has not
 been archived by this issue implementation.
+
+## Stage-boundary archival — issue #60 (2026-10-27)
+
+After #59 merged as `d208635`, reran 199 unit, 142 integration and 133 e2e
+tests on the dedicated test database plus build, types, formatting, lint,
+strict OpenSpec validation and audit. Reviewed the completed twelve tasks
+and API handoff, synced all six progression/results requirements to main,
+and archived this complete predecessor before applying the next format change.

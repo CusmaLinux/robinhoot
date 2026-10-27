@@ -6,7 +6,7 @@ Apply after play-live-question is archived. Review its real state/event contract
 
 ## Goals / Non-Goals
 
-Repository boundary: this is an API-only change. The existing UI is an external consumer maintained in another repository. See [API/UI boundary](../../../docs/api-ui-boundary.md) for contract handoff and completion responsibilities.
+Repository boundary: this is an API-only change. The existing UI is an external consumer maintained in another repository. See [API/UI boundary](../../../../docs/api-ui-boundary.md) for contract handoff and completion responsibilities.
 
 Goals: ordered full-game transitions, exactly one durable final report, and understandable owned history.
 Non-goals: partial reports for cancelled games, cross-game student identity, exports, or live restart recovery.
@@ -116,7 +116,7 @@ without cancellation events, tombstones or durable-report deletion. Stale
 callbacks cannot affect a replacement UUID. Persisted history remains readable
 after cleanup, source edits/deletion and a fresh backend instance.
 
-The [history contract](../../../docs/contracts/report-history.md) provides the
+The [history contract](../../../../docs/contracts/report-history.md) provides the
 API/UI handoff, exact 1/1/3 rankings for 2000/2000/1000 totals, 25/75 percent
 question-count examples, security errors, lifetime policy and executable
 HTTP/Socket.IO acceptance evidence. UI rendering and professor rehearsal remain

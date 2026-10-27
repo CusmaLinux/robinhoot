@@ -3,9 +3,31 @@ export interface QuizOption {
   text: string;
 }
 
+export const TRUE_FALSE_OPTIONS: readonly Readonly<QuizOption>[] =
+  Object.freeze([
+    Object.freeze({ id: '00000000-0000-4000-8000-000000000001', text: 'True' }),
+    Object.freeze({
+      id: '00000000-0000-4000-8000-000000000002',
+      text: 'False',
+    }),
+  ]);
+
+function truthMappingError(question: QuizQuestion): string | undefined {
+  if (question.type !== 'true-false') return;
+  if (
+    question.options.length !== 2 ||
+    question.options.some(
+      (option, index) =>
+        option.id !== TRUE_FALSE_OPTIONS[index].id ||
+        option.text !== TRUE_FALSE_OPTIONS[index].text,
+    )
+  )
+    return 'must contain the fixed True/False choices in order';
+}
+
 export interface QuizQuestion {
   id: string;
-  type: 'multiple-choice';
+  type: 'multiple-choice' | 'true-false';
   prompt: string;
   options: QuizOption[];
   correctOptionIds: string[];
@@ -31,6 +53,31 @@ export interface ReadinessError {
   message: string;
 }
 
+function questionMappingReadiness(
+  question: QuizQuestion,
+  field: string,
+): ReadinessError[] {
+  const errors: ReadinessError[] = [];
+  const mappingError = truthMappingError(question);
+  if (mappingError)
+    errors.push({
+      field: `${field}.options`,
+      code: 'OPTION_MAPPING',
+      message: mappingError,
+    });
+  if (
+    question.correctOptionIds.some(
+      (id) => !question.options.some((option) => option.id === id),
+    )
+  )
+    errors.push({
+      field: `${field}.correctOptionIds`,
+      code: 'CORRECT_OPTION_MAPPING',
+      message: 'Correct IDs must reference choices in this question',
+    });
+  return errors;
+}
+
 export function quizReadiness(quiz: Quiz): {
   hostable: boolean;
   errors: ReadinessError[];
@@ -50,17 +97,19 @@ export function quizReadiness(quiz: Quiz): {
     });
   quiz.questions.forEach((question, index) => {
     const field = `questions[${index}]`;
+    errors.push(...questionMappingReadiness(question, field));
     if (!question.prompt.trim())
       errors.push({
         field: `${field}.prompt`,
         code: 'REQUIRED',
         message: 'Prompt is required',
       });
-    if (question.options.length !== 4)
+    const optionCount = question.type === 'true-false' ? 2 : 4;
+    if (question.options.length !== optionCount)
       errors.push({
         field: `${field}.options`,
         code: 'OPTION_COUNT',
-        message: 'Question must contain four options',
+        message: `Question must contain ${optionCount === 2 ? 'two' : 'four'} options`,
       });
     question.options.forEach((option, optionIndex) => {
       if (!option.text.trim())
@@ -91,7 +140,10 @@ export function quizReadiness(quiz: Quiz): {
 
 export class InvalidQuizStructureError extends Error {}
 
-export function assertQuizStructure(content: QuizContent): void {
+export function assertQuizStructure(
+  content: QuizContent,
+  previous?: QuizContent,
+): void {
   const questionIds = content.questions.map((question) =>
     question.id.toLowerCase(),
   );
@@ -99,6 +151,26 @@ export function assertQuizStructure(content: QuizContent): void {
     throw new InvalidQuizStructureError('questions: duplicate question IDs');
   }
   content.questions.forEach((question, index) => {
+    const oldQuestion = previous?.questions.find(
+      (old) => old.id.toLowerCase() === question.id.toLowerCase(),
+    );
+    if (
+      oldQuestion &&
+      oldQuestion.type !== question.type &&
+      question.options.some((option) =>
+        oldQuestion.options.some(
+          (old) => old.id.toLowerCase() === option.id.toLowerCase(),
+        ),
+      )
+    )
+      throw new InvalidQuizStructureError(
+        `questions[${index}].options: type conversion requires new choice IDs; stale mappings cannot be retained`,
+      );
+    const mappingError = truthMappingError(question);
+    if (mappingError)
+      throw new InvalidQuizStructureError(
+        `questions[${index}].options: ${mappingError}`,
+      );
     const optionIds = question.options.map((option) => option.id.toLowerCase());
     if (new Set(optionIds).size !== optionIds.length) {
       throw new InvalidQuizStructureError(

@@ -35,6 +35,7 @@ import { QuizDetailDto, QuizSummaryDto } from './quiz-response.dto';
 import {
   EMPTY_DRAFT_EXAMPLE,
   SAVE_QUIZ_EXAMPLE,
+  MIXED_QUIZ_EXAMPLE,
   HOSTABLE_QUIZ_EXAMPLE,
   INCOMPLETE_SAVE_EXAMPLE,
   INCOMPLETE_QUIZ_EXAMPLE,
@@ -128,6 +129,7 @@ export class QuizController {
     type: SaveQuizDto,
     examples: {
       hostable: { value: SAVE_QUIZ_EXAMPLE },
+      mixed: { value: MIXED_QUIZ_EXAMPLE },
       incomplete: { value: INCOMPLETE_SAVE_EXAMPLE },
       empty: { value: { title: '', questions: [] } },
     },
@@ -140,6 +142,14 @@ export class QuizController {
         schema: { $ref: getSchemaPath(QuizDetailDto) },
         examples: {
           hostable: { value: HOSTABLE_QUIZ_EXAMPLE },
+          mixed: {
+            value: {
+              ...EMPTY_DRAFT_EXAMPLE,
+              ...MIXED_QUIZ_EXAMPLE,
+              hostable: true,
+              errors: [],
+            },
+          },
           incomplete: { value: INCOMPLETE_QUIZ_EXAMPLE },
           empty: { value: EMPTY_DRAFT_EXAMPLE },
         },

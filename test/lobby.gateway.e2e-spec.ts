@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join as joinPath } from 'node:path';
+import type { GameReport } from '../src/room/domain/game-report';
+import { TRUE_FALSE_OPTIONS } from '../src/quiz/domain/quiz';
 import { REPORT_REPOSITORY_PORT } from '../src/room/application/ports/out/report.repository.port';
 import type { ReportRepositoryPort } from '../src/room/application/ports/out/report.repository.port';
 import type { FinishedGame } from '../src/room/application/ports/in/finish-game.use-case';
@@ -181,13 +185,17 @@ describe('Lobby Socket.IO transport', () => {
       .expect(200);
     return (login.body as { accessToken: string }).accessToken;
   }
-  async function createRoom(token: string, durations = [20]) {
+  async function createDraftId(accountToken: string): Promise<string> {
     const draft = await request(server)
       .post('/quizzes')
-      .auth(token, { type: 'bearer' })
+      .auth(accountToken, { type: 'bearer' })
       .send({})
       .expect(201);
-    const quizId = (draft.body as { id: string }).id;
+    return (draft.body as { id: string }).id;
+  }
+
+  async function createRoom(token: string, durations = [20], truthIndex = -1) {
+    const quizId = await createDraftId(token);
     const options = ['A', 'B', 'C', 'D'].map((text) => ({
       id: randomUUID(),
       text,
@@ -199,10 +207,12 @@ describe('Lobby Socket.IO transport', () => {
         title: 'Private answer key',
         questions: durations.map((durationSeconds, index) => ({
           id: randomUUID(),
-          type: 'multiple-choice',
+          type: index === truthIndex ? 'true-false' : 'multiple-choice',
           prompt: `Secret question ${index + 1}?`,
-          options,
-          correctOptionIds: [options[0].id],
+          options: index === truthIndex ? TRUE_FALSE_OPTIONS : options,
+          correctOptionIds: [
+            index === truthIndex ? TRUE_FALSE_OPTIONS[1].id : options[0].id,
+          ],
           durationSeconds,
         })),
       })
@@ -212,7 +222,7 @@ describe('Lobby Socket.IO transport', () => {
       .auth(token, { type: 'bearer' })
       .send({ quizId, requestId: randomUUID() })
       .expect(201);
-    return created.body as typeof room;
+    return { ...(created.body as typeof room), quizId };
   }
   beforeEach(async () => {
     if (!process.env.DB_NAME?.endsWith('_test'))
@@ -537,6 +547,191 @@ describe('Lobby Socket.IO transport', () => {
       expectedRevision: state.revision,
     });
   }
+  async function completeAfter(
+    host: Socket,
+    milliseconds: number,
+  ): Promise<FinishedGame> {
+    runtime.advance(milliseconds);
+    const result = await finishAtCurrentReveal(host);
+    if (!result.ok) throw new Error(result.error.code);
+    return result.data;
+  }
+
+  it('hosts an unchanged pre-extension quiz fixture and emits a version-1 report', async () => {
+    const legacy = JSON.parse(
+      readFileSync(
+        joinPath(__dirname, 'fixtures/legacy-report-v1.json'),
+        'utf8',
+      ),
+    ) as GameReport;
+    token = await loginAccount();
+    const quizId = await createDraftId(token);
+    await db
+      .updateTable('quizzes')
+      .set({
+        title: legacy.quiz.title,
+        questions: JSON.stringify(legacy.quiz.questions),
+      })
+      .where('id', '=', quizId)
+      .execute();
+    const reopened = await request(server)
+      .get(`/quizzes/${quizId}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(reopened.body).toMatchObject({
+      hostable: true,
+      questions: legacy.quiz.questions,
+    });
+    const created = await request(server)
+      .post('/rooms')
+      .auth(token, { type: 'bearer' })
+      .send({ quizId, requestId: randomUUID() })
+      .expect(201);
+    room = created.body as typeof room;
+    const host = await connectHost();
+    const guest = await connect();
+    await join(guest, 'Legacy player');
+    const opened = await openQuestion(host, 'host.start', 1);
+    expect(opened.question.options).toEqual(
+      legacy.quiz.questions[0].options.map((option, index) => ({
+        ...option,
+        label: String.fromCharCode(65 + index),
+      })),
+    );
+    await answerCorrectly([guest], opened);
+    const finished = await completeAfter(host, 20_000);
+    expect(finished.report).toMatchObject({
+      version: 1,
+      quiz: { version: 1, questions: legacy.quiz.questions },
+      standings: [{ total: 1000 }],
+    });
+  });
+
+  it('plays a mixed game with fixed truth labels and shared deadline/reveal semantics', async () => {
+    token = await loginAccount();
+    const mixedRoom = await createRoom(token, [10, 20], 0);
+    room = mixedRoom;
+    // Edit the source type/choices after room creation; play must use the frozen original.
+    const replacement = {
+      id: randomUUID(),
+      type: 'multiple-choice',
+      prompt: 'Edited source',
+      options: ['A', 'B', 'C', 'D'].map((text) => ({ id: randomUUID(), text })),
+      correctOptionIds: [] as string[],
+      durationSeconds: 30,
+    };
+    replacement.correctOptionIds = [replacement.options[0].id];
+    await request(server)
+      .put(`/quizzes/${mixedRoom.quizId}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Edited', questions: [replacement] })
+      .expect(200);
+    const host = await connectHost();
+    const guest = await connect();
+    await join(guest, 'Alice');
+    const wrong = await connect();
+    const missing = await connect();
+    await join(wrong, 'Bob');
+    await join(missing, 'Carol');
+    const first = await openQuestion(host, 'host.start', 3);
+    expect(first.question).toMatchObject({
+      type: 'true-false',
+      options: [
+        { ...TRUE_FALSE_OPTIONS[0], label: 'True' },
+        { ...TRUE_FALSE_OPTIONS[1], label: 'False' },
+      ],
+    });
+    expect(first).not.toHaveProperty('correctOptionIds');
+    expect(first.deadline - first.openedAt).toBe(10_000);
+    const input = {
+      roomId: room.roomId,
+      questionId: first.questionId,
+      optionId: TRUE_FALSE_OPTIONS[1].id,
+      submissionId: randomUUID(),
+    };
+    const receipt = await ack<AnswerReceipt>(guest, 'answer.submit', input);
+    expect(receipt).toMatchObject({
+      ok: true,
+      data: { accepted: true, optionId: TRUE_FALSE_OPTIONS[1].id },
+    });
+    expect(
+      await ack(wrong, 'answer.submit', {
+        ...input,
+        optionId: TRUE_FALSE_OPTIONS[0].id,
+        submissionId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: true });
+    runtime.advance(9_999);
+    expect(await readQuestion(host)).toMatchObject({
+      phase: 'question_open',
+      deadline: first.deadline,
+    });
+    runtime.advance(1);
+    expect(
+      await ack(missing, 'answer.submit', {
+        ...input,
+        submissionId: randomUUID(),
+      }),
+    ).toMatchObject({ ok: false, error: { code: 'LATE_ANSWER' } });
+    const reveal = await readQuestion(host);
+    expect(reveal).toMatchObject({
+      phase: 'question_reveal',
+      correctOptionIds: [TRUE_FALSE_OPTIONS[1].id],
+    });
+    expect(await ack(guest, 'answer.submit', input)).toEqual(receipt);
+    const second = await openQuestion(host, 'host.next', reveal.revision);
+    expect(second.question.type).toBe('multiple-choice');
+    expect(second.question.options.map((option) => option.label)).toEqual([
+      'A',
+      'B',
+      'C',
+      'D',
+    ]);
+    expect(second.deadline - second.openedAt).toBe(20_000);
+    await answerCorrectly([guest, wrong, missing], second);
+    const finished = await completeAfter(host, 20_000);
+    expect(finished.report).toMatchObject({
+      version: 2,
+      quiz: { version: 2 },
+      standings: [
+        { nickname: 'Alice', total: 2000, rank: 1 },
+        { nickname: 'Bob', total: 1000, rank: 2 },
+        { nickname: 'Carol', total: 1000, rank: 2 },
+      ],
+      questions: [
+        {
+          eligible: 3,
+          correct: 1,
+          incorrect: 1,
+          missing: 1,
+          accuracy: (1 / 3) * 100,
+        },
+        { eligible: 3, correct: 3, incorrect: 0, missing: 0, accuracy: 100 },
+      ],
+    });
+    const history = await request(server)
+      .get(`/reports/${room.roomId}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(history.body).toEqual(finished.report);
+    expect(finished.report.quiz.questions[0]).toMatchObject({
+      type: 'true-false',
+      prompt: 'Secret question 1?',
+      options: TRUE_FALSE_OPTIONS,
+      correctOptionIds: [TRUE_FALSE_OPTIONS[1].id],
+    });
+    expect(finished.report.quiz.questions[1].type).toBe('multiple-choice');
+    await request(server)
+      .delete(`/quizzes/${mixedRoom.quizId}`)
+      .auth(token, { type: 'bearer' })
+      .expect(204);
+    const retained = await request(server)
+      .get(`/reports/${room.roomId}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(retained.body).toEqual(finished.report);
+  });
+
   it('finishes a two-question game with stable 1,1,3 standings and frozen missing counts', async () => {
     const { host, alice, bob } = await twoQuestionActors();
     const absent = await connect();

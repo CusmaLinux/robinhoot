@@ -1,3 +1,4 @@
+import { TRUE_FALSE_OPTIONS } from '../src/quiz/domain/quiz';
 import 'dotenv/config';
 import { randomUUID } from 'crypto';
 import { INestApplication } from '@nestjs/common';
@@ -95,6 +96,153 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
       updatedAt: string;
     };
   }
+
+  it('saves and reopens hostable True/False choices without changing their IDs', async () => {
+    const draft = await createDraft();
+    const truth = {
+      ...question(),
+      type: 'true-false',
+      options: TRUE_FALSE_OPTIONS,
+      correctOptionIds: [TRUE_FALSE_OPTIONS[1].id],
+    };
+    const response = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Truth', questions: [truth] })
+      .expect(200);
+    expect(response.body).toMatchObject({
+      hostable: true,
+      errors: [],
+      questions: [truth],
+    });
+    const reopened = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(reopened.body).toEqual(response.body);
+  });
+
+  it.each([
+    'old-options',
+    'old-correct-id',
+    'changed-text',
+    'reordered',
+    'reverse-conversion',
+  ])('rejects %s conversion atomically', async (kind) => {
+    const draft = await createDraft();
+    const multiple = question();
+    const original =
+      kind === 'reverse-conversion'
+        ? {
+            ...multiple,
+            type: 'true-false',
+            options: [...TRUE_FALSE_OPTIONS],
+            correctOptionIds: [TRUE_FALSE_OPTIONS[0].id],
+          }
+        : multiple;
+    const saved = await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Original', questions: [original] })
+      .expect(200);
+    const truth = {
+      ...original,
+      type: 'true-false',
+      options: [...TRUE_FALSE_OPTIONS],
+      correctOptionIds: [TRUE_FALSE_OPTIONS[0].id],
+    };
+    const changed = {
+      'old-options': { ...original, type: 'true-false' },
+      'old-correct-id': {
+        ...truth,
+        correctOptionIds: original.correctOptionIds,
+      },
+      'changed-text': {
+        ...truth,
+        options: [
+          { ...TRUE_FALSE_OPTIONS[0], text: 'Yes' },
+          TRUE_FALSE_OPTIONS[1],
+        ],
+      },
+      reordered: { ...truth, options: [...TRUE_FALSE_OPTIONS].reverse() },
+      'reverse-conversion': {
+        ...truth,
+        type: 'multiple-choice',
+        options: [...TRUE_FALSE_OPTIONS, ...multiple.options.slice(2)],
+      },
+    }[kind];
+    await request(server)
+      .put(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .send({ title: 'Changed', questions: [changed] })
+      .expect(400);
+    const reopened = await request(server)
+      .get(`/quizzes/${draft.id}`)
+      .auth(token, { type: 'bearer' })
+      .expect(200);
+    expect(reopened.body).toEqual(saved.body);
+  });
+
+  it('converts a draft in both directions with explicit replacement mappings', async () => {
+    const draft = await createDraft();
+    const multiple = question();
+    const truth = {
+      ...multiple,
+      type: 'true-false',
+      options: TRUE_FALSE_OPTIONS,
+      correctOptionIds: [TRUE_FALSE_OPTIONS[1].id],
+    };
+    for (const content of [
+      multiple,
+      truth,
+      { ...question(), id: multiple.id },
+    ]) {
+      const response = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send({ title: 'Conversion', questions: [content] })
+        .expect(200);
+      expect(response.body).toMatchObject({
+        hostable: true,
+        questions: [content],
+      });
+    }
+  });
+
+  it.each([
+    { correctOptionIds: [] },
+    { correctOptionIds: TRUE_FALSE_OPTIONS.map((option) => option.id) },
+  ])(
+    'saves incomplete truth correctness %# but refuses hosting',
+    async ({ correctOptionIds }) => {
+      const draft = await createDraft();
+      const truth = {
+        ...question(),
+        type: 'true-false',
+        options: TRUE_FALSE_OPTIONS,
+        correctOptionIds,
+      };
+      const saved = await request(server)
+        .put(`/quizzes/${draft.id}`)
+        .auth(token, { type: 'bearer' })
+        .send({ title: 'Incomplete', questions: [truth] })
+        .expect(200);
+      expect(saved.body).toMatchObject({
+        hostable: false,
+        errors: [
+          {
+            field: 'questions[0].correctOptionIds',
+            code: 'CORRECT_OPTION_COUNT',
+          },
+        ],
+      });
+      await request(server)
+        .post('/rooms')
+        .auth(token, { type: 'bearer' })
+        .send({ quizId: draft.id, requestId: randomUUID() })
+        .expect(400);
+    },
+  );
 
   it('deletes an owned saved quiz from subsequent retrieval and listing', async () => {
     const draft = await createDraft();
@@ -847,7 +995,7 @@ describe('Private quiz drafts (HTTP + PostgreSQL)', () => {
     expect(read.body).toEqual(saved.body);
   });
 
-  it.each(['hostable', 'incomplete', 'empty'])(
+  it.each(['hostable', 'incomplete', 'empty', 'mixed'])(
     'publishes a %s save example matching save and read',
     async (name) => {
       const document = SwaggerModule.createDocument(

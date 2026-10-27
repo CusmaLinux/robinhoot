@@ -37,7 +37,7 @@ export interface QuestionState {
   report?: GameReport;
   question: {
     id: string;
-    type: 'multiple-choice';
+    type: 'multiple-choice' | 'true-false';
     prompt: string;
     options: { id: string; label: string; text: string }[];
   };

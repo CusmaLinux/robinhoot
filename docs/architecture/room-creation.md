@@ -17,7 +17,7 @@ flowchart LR
   Reader --> Adapter[OwnedQuizSnapshotReader]
   Adapter --> Quiz[QuizAuthoringUseCasePort]
   Quiz --> DB[(Owned saved quizzes)]
-  Memory --> Snapshot[Frozen version-1 quiz snapshot]
+  Memory --> Snapshot[Frozen version-1 or version-2 quiz snapshot]
 ```
 
 RoomModule binds application ports through Symbols and imports only QuizModule's

@@ -6,7 +6,7 @@ completion; see [finalization and the version-1 document](game-finalization.md).
 
 ## Account-authenticated history
 
-`GET /reports` returns an array of the authenticated account's complete version-1
+`GET /reports` returns an array of the authenticated account's complete version-1 or version-2
 report documents, ordered by `completedAt` descending and report UUID ascending
 for equal timestamps. No reports returns `[]`. This MVP endpoint has no pagination
 or filter parameters. `GET /reports/:id` returns one original document; IDs are
@@ -21,7 +21,7 @@ const reports = await fetch(`${apiUrl}/reports`, { headers }).then((r) =>
 const report = await fetch(`${apiUrl}/reports/${reportId}`, { headers }).then(
   (r) => r.json(),
 );
-// report has exactly the same version-1 shape as game.finished.report.
+// report equals the original game.finished.report (version 1 or 2).
 ```
 
 Owner identity comes only from the validated account token. Another user or admin
@@ -133,3 +133,5 @@ PostgreSQL test database:
 
 This is the API contract handoff. UI implementation and shared professor rehearsal
 remain in the separate UI repository; no UI issue URL is invented here.
+
+See [True/False and report compatibility](true-false.md) for mixed snapshots and the version-2 contract.

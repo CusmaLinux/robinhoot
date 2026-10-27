@@ -1,7 +1,7 @@
 import { freezeSnapshot, type QuizSnapshot, type Room } from './room';
 
 export interface GameReport {
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly id: string;
   readonly roomId: string;
   readonly ownerId: string;
@@ -60,7 +60,7 @@ export function buildGameReport(room: Room, completedAt: string): GameReport {
       compare(a.playerId, b.playerId),
   );
   return Object.freeze({
-    version: 1,
+    version: room.quiz.version,
     id: room.roomId,
     roomId: room.roomId,
     ownerId: room.host.ownerId,

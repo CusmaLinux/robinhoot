@@ -66,7 +66,7 @@ request after resolving the failure.
 Creation reads the owner-scoped quiz once and rejects incomplete content using
 the existing derived readiness rules. It copies the title, ordered questions,
 ordered options, stable IDs, answer mappings, and durations into a deeply frozen
-version-1 snapshot. Internal snapshots retain answer keys for future game use;
+version-1 (multiple-choice only) or version-2 (contains True/False) snapshot. Internal snapshots retain answer keys for future game use;
 they are never returned in creation metadata. Saving, reordering, or deleting the
 source does not change that snapshot. There is no room-to-quiz database foreign
 key or cascade.
@@ -141,3 +141,5 @@ checks run with `pnpm run test --runInBand in-memory-room.store.spec.ts`.
 After a successful `host.start`, replaying the active creation receipt returns
 current metadata with `question_open` or `question_reveal` phase. It still omits
 question content and correctness; see the [live-question contract](live-question.md).
+
+See the [True/False contract](true-false.md) for fixed choices and snapshot/report version compatibility.
