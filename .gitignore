@@ -48,7 +48,6 @@ logs/
 *.log
 
 # Optional: If you use self-hosted runners or docker targets locally
-.dockerignore
 
 # Ignore local CodeGraph indexes
 .codegraph/

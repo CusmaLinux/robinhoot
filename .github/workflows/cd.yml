@@ -1,0 +1,127 @@
+name: Release deployment
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing stable GitHub release (vMAJOR.MINOR.PATCH)'
+        required: true
+        type: string
+      mode:
+        description: 'Publish an image, or redeploy an existing release image'
+        required: true
+        default: deploy-existing
+        type: choice
+        options: [publish, deploy-existing]
+      image_digest:
+        description: 'For deploy-existing: sha256 digest from that release image job summary'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Do not cancel an in-flight migration or deployment when another release arrives.
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  image:
+    if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'release' && !github.event.release.prerelease)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Verify published release and exact-commit CI
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+        run: |
+          sha=$(node scripts/deploy/verify-release.mjs)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Check out verified commit
+        env:
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: git checkout --detach "$RELEASE_SHA"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Select image repository
+        id: repository
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - name: Publish portable runtime image
+        if: github.event_name == 'release' || inputs.mode == 'publish'
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.repository.outputs.name }}:sha-${{ steps.release.outputs.sha }}
+          build-args: RELEASE_SHA=${{ steps.release.outputs.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Resolve immutable deployment digest
+        id: image
+        env:
+          IMAGE: ${{ steps.repository.outputs.name }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          EXISTING_DIGEST: ${{ inputs.image_digest }}
+        run: |
+          digest="$BUILT_DIGEST"
+          if [ -z "$digest" ]; then
+            digest="$EXISTING_DIGEST"
+          fi
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          docker pull "$IMAGE@$digest" >/dev/null
+          revision=$(docker image inspect "$IMAGE@$digest" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')
+          test "$revision" = "$RELEASE_SHA"
+          echo "ref=$IMAGE@$digest" >> "$GITHUB_OUTPUT"
+          echo "Image: \`$IMAGE@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: image
+    # Bootstrap: publish the first image before creating the Render service.
+    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'release' || inputs.mode == 'deploy-existing')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.image.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Deploy digest and verify database readiness and release identity
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          IMAGE_REF: ${{ needs.image.outputs.image }}
+          RELEASE_SHA: ${{ needs.image.outputs.sha }}
+        run: node scripts/deploy/render.mjs
