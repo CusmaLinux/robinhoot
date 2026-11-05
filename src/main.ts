@@ -7,6 +7,8 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { trustProxyHops } from './runtime.config';
 
 async function bootstrap() {
   const jwtSecret = process.env.JWT_SECRET;
@@ -32,7 +34,9 @@ async function bootstrap() {
     );
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.set('trust proxy', trustProxyHops());
+  app.enableShutdownHooks();
 
   app.use(json({ limit: '1mb' }));
   app.use(helmet());
@@ -59,6 +63,7 @@ async function bootstrap() {
       max: 60,
       standardHeaders: true,
       legacyHeaders: false,
+      skip: (request) => request.path === '/health/ready',
     }),
   );
 
@@ -77,6 +82,6 @@ async function bootstrap() {
     SwaggerModule.setup('api', app, documentFactory);
   }
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 void bootstrap();

@@ -22,7 +22,8 @@
     "test:all": "jest --coverage && jest --config ./test/jest-integration.json",
     "db:migrate": "tsx src/database/migrator.ts",
     "db:migrate:down": "tsx src/database/migrator-down.ts",
-    "db:mutation:make": "tsx src/database/make-migration.ts"
+    "db:mutation:make": "tsx src/database/make-migration.ts",
+    "test:deployment": "node --test scripts/deploy/*.test.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.27",
@@ -30,6 +31,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^11.1.27",
     "@nestjs/platform-socket.io": "^11.2.8",
+    "@nestjs/swagger": "^11.4.4",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.2.8",
     "bcrypt": "^6.0.0",
@@ -50,7 +52,6 @@
     "@fission-ai/openspec": "^1.14.3",
     "@nestjs/cli": "^11.0.23",
     "@nestjs/schematics": "^11.1.0",
-    "@nestjs/swagger": "^11.4.4",
     "@nestjs/testing": "^11.1.27",
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",

@@ -33,6 +33,18 @@ Non-goals: UI hosting/builds, browser routing, accessible screen implementation,
 
 Build API release artifacts and validate a staging configuration first. Apply additive database migrations, verify stored data, run the API workload/contract rehearsal, and hand off the integration details. Before rollback stop admissions and send closure reasons through existing events; restore a compatible API version while preserving SQL data. Active rooms are intentionally not migrated.
 
+## Hosting decision update — 2026-11-04
+
+The maintainer selected Render Free plus Neon Free after Oracle was unavailable,
+and explicitly chose GitHub release deployments rather than every merge to main.
+This replaces the private-network PostgreSQL assumption with authenticated public
+PostgreSQL over certificate-verified TLS. One process remains required. See
+[deployment setup](../../../docs/deployment.md) for the portable image, migration
+startup, secret locations, CI gate and provider adapter. This is deployment
+groundwork coordinated with #21/#40, not completed pilot evidence. Actual Render
+URL, UI origins, workload/retention decisions, predecessor archival and restore
+rehearsal remain pending; do not mark tasks 1.1–1.4 complete from this code alone.
+
 ## UI/Product Follow-up
 
 Coordinate the full product rehearsal using the separate UI deployment and actual classroom devices/network. API completion alone does not establish accessible screens or unaided professor use.

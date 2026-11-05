@@ -4,6 +4,9 @@ This repository implements the API. The existing UI is maintained separately; se
 
 ## Implemented behavior
 
+- [Release deployment](deployment.md): portable API image, Render/Neon setup,
+  release-triggered GitHub Actions, secret placement and recovery limitations.
+
 - [Optional question images](contracts/question-images.md): validated HTTPS references, safe live metadata, frozen report references and no backend fetching.
 
 - [True/False questions](contracts/true-false.md): fixed choices, safe conversions, mixed gameplay and versioned report compatibility.

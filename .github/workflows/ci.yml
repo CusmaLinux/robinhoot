@@ -107,6 +107,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run Jest unit suite
         run: pnpm exec jest --ci
+      - name: Verify deployment safety checks
+        run: pnpm run test:deployment
 
   # ---------------------------------------------------------------------------
   # Integration tests: test/*.spec.ts (NOT *.e2e-spec.ts).
@@ -260,6 +262,58 @@ jobs:
           annotations: true
 
   # ---------------------------------------------------------------------------
+  # Exercise the actual production image and compiled startup migrations.
+  # ---------------------------------------------------------------------------
+  container:
+    name: Container startup
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: robinhoot_ci_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d robinhoot_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build runtime image
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: docker build --build-arg "RELEASE_SHA=$RELEASE_SHA" -t robinhoot-ci .
+      - name: Verify migration, restart and readiness
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker run -d --name api --network host \
+            -e DB_HOST -e DB_PORT -e DB_USER -e DB_PASSWORD -e DB_NAME -e JWT_SECRET \
+            robinhoot-ci
+          ready() {
+            for _ in $(seq 1 30); do
+              if curl -fsS --max-time 5 http://localhost:3000/health/ready \
+                | jq -e --arg sha "$RELEASE_SHA" '.status == "ok" and .revision == $sha' >/dev/null; then
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+          ready
+          docker restart api
+          ready
+      - name: Runtime diagnostics
+        if: failure()
+        run: docker logs api
+      - name: Clean up
+        if: always()
+        run: docker rm -f api
+
+  # ---------------------------------------------------------------------------
   # Aggregator: only runs if every required job succeeded. Acts as the
   # single signal that downstream workflows (notably ocr-review.yml)
   # listen to via the workflow_run event.
@@ -274,6 +328,7 @@ jobs:
       - integration-tests
       - e2e-tests
       - build
+      - container
     if: success()
     steps:
       - name: Mark CI green
